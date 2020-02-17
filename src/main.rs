@@ -10,6 +10,7 @@ mod types;
 
 use crate::delta::apply_delta;
 use crate::models::*;
+use diesel::insert_into;
 use diesel::prelude::*;
 use futures::StreamExt;
 use rdkafka::config::RDKafkaLogLevel;
@@ -18,7 +19,7 @@ use rdkafka::{ClientConfig, Message};
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str;
 use types::*;
 
@@ -37,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     config.set("sasl.mechanisms", "PLAIN");
     config.set("security.protocol", "SASL_SSL");
-    config.set("sasl.username", "");
+    config.set("sasl.username", "XNLQRBQMSA5PYTNA");
     config.set("sasl.password", "");
 
     config.set("group.id", "archer_dev");
@@ -83,6 +84,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let existing = existing_triples(db_conn, id);
                     let next = apply_delta(existing, delta);
                     //// Replace
+                    // TODO: Delete existing data
+                    let doc = &Document {
+                        id,
+                        iri: format!("https://id.openraadsinformatie.nl/{}", id),
+                    };
+                    insert_into(self::schema::documents::table)
+                        .values(doc)
+                        .execute(db_conn)
+                        .expect("Error while inserting into documents");
+
+                    let mut resource_iris = HashSet::new();
+                    existing.into_iter().for_each(|h| {
+                        resource_iris.insert(h.get(0).unwrap().as_str());
+                    });
+                    let mut new_resources = vec![];
+                    for iri in resource_iris {
+                        new_resources.push(&Resource {
+                            id,
+                            document_id: id,
+                            iri: String::from(iri),
+                        })
+                    }
+
+                    println!("Inserting {} resources", new_resources.len());
+                    insert_into(self::schema::resources::table)
+                        .values(new_resources)
+                        .execute(db_conn)
+                        .expect("Error while inserting into resources");
+
+                    let properties = existing.into_iter().map(|h| &Property {
+                        id,
+                        // TODO: resolve the proper resource id from above
+                        resource_id: 0,
+                        predicate: h[1],
+                        order: 0,
+                        value: h[2],
+                        datatype: h[3],
+                        language: h[4],
+                        prop_resource: 0,
+                    });
+                    println!("Inserting {} properties", properties.len());
+                    insert_into(self::schema::properties::table)
+                        .values(properties)
+                        .execute(db_conn)
+                        .expect("Error while inserting into resources");
                 }
 
                 // Now that the message is completely processed, add it's position to the offset
@@ -112,8 +158,6 @@ fn get_doc_count(db_conn: &PgConnection) {
         doc_count, resource_count, property_count
     );
 }
-
-type DieselResult<T> = Result<T, diesel::result::Error>;
 
 fn get_document(
     db_conn: &PgConnection,
