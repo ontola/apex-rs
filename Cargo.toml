@@ -1,0 +1,18 @@
+[package]
+name = "apex-rs"
+version = "0.1.0"
+authors = ["Fletcher91 <thom@argu.co>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+diesel = { version = "1.4.3", features = ["postgres"] }
+log = "0.4.8"
+rdkafka = { version = "0.23.1", features = ["cmake-build", "ssl", "gssapi"] }
+tokio = { version = "0.2.11", features = ["full"] }
+futures = "0.3.4"
+futures-util = "0.3.4"
+rio_api = "0.4.0"
+rio_turtle = "0.4.0"
+serde = "1.0.104"
