@@ -13,8 +13,10 @@ mod types;
 
 use crate::delta::apply_delta;
 use crate::models::*;
-use diesel::insert_into;
+use diesel::dsl::sql;
 use diesel::prelude::*;
+use diesel::result::Error;
+use diesel::{insert_into, sql_query};
 use dotenv::dotenv;
 use futures::StreamExt;
 use rdkafka::config::RDKafkaLogLevel;
@@ -72,6 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fetch_time = 0u128;
     let mut insert_time = 0u128;
 
+    let mut property_map = get_predicates(&db_conn);
+    let datatype_map = get_datatypes(&db_conn);
+
     while let Some(message) = stream.next().await {
         match message {
             Err(e) => {
@@ -79,7 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(m) => {
                 let transaction = db_conn.transaction::<(), diesel::result::Error, _>(|| {
-                    //                let _key = str::from_utf8(&m.key().expect("message has no key")).unwrap();
                     let payload = &m.payload().expect("message has no payload");
                     let parse_start = SystemTime::now();
                     let docs = parse(payload);
@@ -91,13 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for (k, delta) in docs {
                         let fetch_start = SystemTime::now();
                         let id = k.parse::<i32>().unwrap();
-                        let existing = match existing_triples(&db_conn, id) {
-                            Some(data) => {
-                                delete_document(&db_conn, id);
-                                data
-                            }
-                            None => vec![],
-                        };
+
+                        let existing = reset_document(&db_conn, &property_map, &datatype_map, id);
                         fetch_time += SystemTime::now()
                             .duration_since(fetch_start)
                             .unwrap()
@@ -105,24 +104,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let next = apply_delta(&existing, delta);
 
                         //// Replace
-                        // TODO: Delete existing data
-                        let doc = &Document {
-                            id,
-                            iri: format!("https://id.openraadsinformatie.nl/{}", id),
-                        };
                         let insert_start = SystemTime::now();
-                        insert_into(self::schema::documents::table)
-                            .values(doc)
-                            .execute(&db_conn)
-                            .expect("Error while inserting into documents");
-
                         let resources = insert_resources(&db_conn, &next, id);
                         let mut resource_id_map = HashMap::<String, i32>::new();
                         for resource in resources {
                             resource_id_map.insert(resource.iri.clone(), resource.id);
                         }
 
-                        insert_properties(&db_conn, &next, resource_id_map);
+                        insert_properties(
+                            &db_conn,
+                            &mut property_map,
+                            &datatype_map,
+                            &next,
+                            resource_id_map,
+                        );
                         insert_time += SystemTime::now()
                             .duration_since(insert_start)
                             .unwrap()
@@ -162,14 +157,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn delete_document(db_conn: &PgConnection, doc_id: i32) {
-    use schema::documents::dsl::*;
+fn get_datatypes(db_conn: &PgConnection) -> HashMap<String, i32> {
+    use schema::datatypes::dsl::*;
+
+    let mut map = HashMap::new();
+    let props = datatypes
+        .limit(100_000)
+        .load::<Datatype>(db_conn)
+        .expect("Could not fetch datatypes");
+
+    for p in props {
+        map.entry(p.value.clone()).or_insert(p.id);
+    }
+
+    map
+}
+
+fn get_predicates(db_conn: &PgConnection) -> HashMap<String, i32> {
+    use schema::predicates::dsl::*;
+
+    let mut map = HashMap::new();
+    let props = predicates
+        .limit(100_000)
+        .load::<Predicate>(db_conn)
+        .expect("Could not fetch properties");
+
+    for p in props {
+        map.entry(p.value.clone()).or_insert(p.id);
+    }
+
+    map
+}
+
+fn delete_document_data(db_conn: &PgConnection, doc_id: i32) {
+    use schema::properties;
+    use schema::resources::dsl::*;
 
     println!("start delete");
-    let test = id.eq(doc_id);
-    diesel::delete(documents.filter(test))
+    let resource_ids = resources
+        .select(id)
+        .filter(document_id.eq(doc_id))
+        .get_results::<i32>(db_conn)
+        .expect("Could not fetch resource ids for document");
+
+    let props = properties::dsl::resource_id.eq_any(&resource_ids);
+    diesel::delete(properties::table)
+        .filter(props)
         .execute(db_conn)
-        .expect("Tried to delete nonexisting document");
+        .expect("Couldn't delete existing properties");
+
+    diesel::delete(resources)
+        .filter(id.eq_any(&resource_ids))
+        .execute(db_conn)
+        .expect("Couldn't delete existing resources");
+
     println!("deleted resource");
 }
 
@@ -192,7 +233,15 @@ fn insert_resources(db_conn: &PgConnection, model: &Model, id: i32) -> Vec<Resou
         .expect("Error while inserting into resources")
 }
 
-fn insert_properties(db_conn: &PgConnection, model: &Model, resource_id_map: HashMap<String, i32>) {
+fn insert_properties(
+    db_conn: &PgConnection,
+    mut predicate_map: &mut HashMap<String, i32>,
+    datatype_map: &HashMap<String, i32>,
+    model: &Model,
+    resource_id_map: HashMap<String, i32>,
+) {
+    use crate::schema::properties::dsl;
+
     let mut properties = vec![];
 
     for h in model {
@@ -200,21 +249,51 @@ fn insert_properties(db_conn: &PgConnection, model: &Model, resource_id_map: Has
             .get(&h[0])
             .expect("Inserting property not inserted in resources");
 
-        properties.push(NewProperty {
-            resource_id,
-            predicate: String::from(&h[1]),
-            order: None,
-            value: String::from(&h[2]),
-            datatype: String::from(&h[3]),
-            language: String::from(&h[4]),
-            prop_resource: None,
-        });
+        if !predicate_map.contains_key(&h[1]) {
+            insert_and_update(db_conn, &mut predicate_map, &h[1]);
+        }
+
+        let pred_id: i32 = *predicate_map.get_mut(&h[1]).unwrap();
+
+        properties.push((
+            dsl::resource_id.eq(resource_id),
+            dsl::predicate_id.eq(pred_id),
+            //            dsl::order.eq(None),
+            dsl::value.eq(String::from(&h[2])),
+            dsl::datatype_id.eq(datatype_map
+                .get(&h[3])
+                .unwrap_or_else(|| panic!("Datatype not found in map ({})", &h[3]))),
+            //            dsl::language_id.eq(Some(0)),
+            //            dsl::prop_resource.eq(None),
+        ));
     }
 
     insert_into(self::schema::properties::table)
         .values(&properties)
         .execute(db_conn)
         .expect("Error while inserting into resources");
+}
+
+fn insert_and_update(
+    db_conn: &PgConnection,
+    predicate_map: &mut HashMap<String, i32>,
+    predicate_value: &str,
+) -> i32 {
+    use schema::predicates::dsl::*;
+
+    let target = value.eq(predicate_value);
+    let p = insert_into(predicates)
+        .values(vec![(&target)])
+        .get_result::<Predicate>(db_conn)
+        .unwrap_or_else(|_| {
+            predicates
+                .filter(&target)
+                .get_result(db_conn)
+                .unwrap_or_else(|_| panic!("Predicate not found {}", predicate_value))
+        });
+    predicate_map.entry(p.value).or_insert(p.id);
+
+    p.id
 }
 
 fn get_doc_count(db_conn: &PgConnection) {
@@ -265,23 +344,45 @@ fn get_document(
     docs.into_iter().zip(resources_and_properties).collect()
 }
 
-fn existing_triples(db_conn: &PgConnection, id: i32) -> Option<Model> {
+fn reset_document(
+    db_conn: &PgConnection,
+    property_map: &HashMap<String, i32>,
+    datatype_map: &HashMap<String, i32>,
+    id: i32,
+) -> Model {
     let doc = get_document(db_conn, id);
     let first = doc.first();
+    let mut props: Vec<Hextuple> = vec![];
 
     if doc.is_empty() {
-        None
+        let doc = &Document {
+            id,
+            iri: format!("https://id.openraadsinformatie.nl/{}", id),
+        };
+        insert_into(self::schema::documents::table)
+            .values(doc)
+            .execute(db_conn)
+            .expect("Error while inserting into documents");
     } else {
-        let mut props: Vec<Hextuple> = vec![];
         let (doc, resources) = first.unwrap();
         for (resource, properties) in resources {
             for p in properties {
+                let predicate = property_map
+                    .iter()
+                    .find(|(k, v)| **v == p.predicate_id)
+                    .unwrap()
+                    .0;
+                let datatype = datatype_map
+                    .iter()
+                    .find(|(k, v)| **v == p.datatype_id)
+                    .unwrap()
+                    .0;
                 props.push([
                     resource.iri.clone(),
-                    p.predicate.clone(),
+                    predicate.to_string(),
                     p.value.clone(),
-                    p.datatype.clone(),
-                    p.language.clone(),
+                    datatype.to_string(),
+                    "".into(), // p.language.clone(),
                     "".to_string(),
                 ]);
             }
@@ -292,8 +393,10 @@ fn existing_triples(db_conn: &PgConnection, id: i32) -> Option<Model> {
             props.len()
         );
 
-        Some(props)
+        delete_document_data(&db_conn, id)
     }
+
+    props
 }
 
 fn parse(payload: &[u8]) -> HashMap<String, Vec<Hextuple>> {
@@ -329,9 +432,8 @@ fn test(
         .split('/')
         .last()
         .expect("Graph not properly formatted");
-    if !map.contains_key(id) {
-        map.insert(id.into(), vec![]);
-    }
+
+    map.entry(String::from(id)).or_insert_with(|| vec![]);
 
     map.get_mut(id).unwrap().push([
         subj,
