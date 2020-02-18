@@ -7,7 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-diesel = { version = "1.4.3", features = ["postgres"] }
+diesel = { version = "1.4.3", features = ["postgres", "uuidv07"] }
+dotenv = "0.15.0"
+dotenv_codegen = "0.15.0"
 log = "0.4.8"
 rdkafka = { version = "0.23.1", features = ["cmake-build", "ssl", "gssapi"] }
 tokio = { version = "0.2.11", features = ["full"] }
@@ -16,3 +18,5 @@ futures-util = "0.3.4"
 rio_api = "0.4.0"
 rio_turtle = "0.4.0"
 serde = "1.0.104"
+uuid = { version = "0.7", features = ["serde", "v4"] }
+time = "0.2.6"

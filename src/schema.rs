@@ -16,15 +16,14 @@ joinable!(resources -> documents (document_id));
 allow_tables_to_appear_in_same_query!(resources, documents);
 
 table! {
-    properties {
-        id -> Integer,
+    properties(resource_id, predicate, order)  {
         resource_id -> Integer,
         predicate -> VarChar,
-        order -> Integer,
+        order -> Nullable<Integer>,
         value -> VarChar,
         datatype -> VarChar,
         language -> VarChar,
-        prop_resource -> Integer,
+        prop_resource -> Nullable<Integer>,
     }
 }
 

@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate log;
+extern crate dotenv;
 #[macro_use]
 extern crate diesel;
+#[macro_use]
+extern crate dotenv_codegen;
 
 mod delta;
 mod models;
@@ -12,6 +15,7 @@ use crate::delta::apply_delta;
 use crate::models::*;
 use diesel::insert_into;
 use diesel::prelude::*;
+use dotenv::dotenv;
 use futures::StreamExt;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -20,28 +24,24 @@ use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
 use std::collections::{HashMap, HashSet};
-use std::str;
+use std::io::Write;
+use std::time::SystemTime;
+use std::{io, str};
 use types::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
     println!("Hello, world!");
     let mut config = ClientConfig::new();
-    config.set(
-        "bootstrap.servers",
-        "pkc-lzgmd.europe-west3.gcp.confluent.cloud",
-    );
+    config.set("bootstrap.servers", dotenv!("KAFKA_ADDRESS"));
 
-    config.set(
-        "bootstrap.servers",
-        "pkc-lzgmd.europe-west3.gcp.confluent.cloud:9092",
-    );
     config.set("sasl.mechanisms", "PLAIN");
     config.set("security.protocol", "SASL_SSL");
-    config.set("sasl.username", "XNLQRBQMSA5PYTNA");
-    config.set("sasl.password", "");
+    config.set("sasl.username", dotenv!("KAFKA_USERNAME"));
+    config.set("sasl.password", dotenv!("KAFKA_PASSWORD"));
 
-    config.set("group.id", "archer_dev");
+    config.set("group.id", dotenv!("KAFKA_GROUP_ID"));
     config.set("queue.buffering.max.ms", "0");
     //    config.set("allow.auto.create.topics", "false");
     config.set("fetch.max.bytes", "5428800");
@@ -55,19 +55,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     config.set_log_level(RDKafkaLogLevel::Debug);
     println!("Config initialized");
-    let topic = "ori-delta";
+    let topic = dotenv!("KAFKA_TOPIC");
 
     let consumer = config.create::<StreamConsumer>()?;
 
-    consumer.subscribe(&vec![topic.as_ref()])?;
+    consumer.subscribe(&[topic])?;
 
-    let db_conn =
-        &PgConnection::establish("postgres://ori_api_user:@34.90.249.196/ori_api?sslmode=require")
-            .expect(&format!("Error connecting to pg"));
+    let db_conn = PgConnection::establish(dotenv!("DATABASE_URL"))
+        .expect(&"Error connecting to pg".to_string());
 
-    get_doc_count(db_conn);
+    //    get_doc_count(db_conn);
 
     let mut stream = consumer.start();
+    let mut i = 0i64;
+    let mut parse_time = 0u128;
+    let mut fetch_time = 0u128;
+    let mut insert_time = 0u128;
 
     while let Some(message) = stream.next().await {
         match message {
@@ -75,72 +78,143 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 warn!("Kafka error: {}", e);
             }
             Ok(m) => {
-                let key = str::from_utf8(&m.key().expect("message has no key")).unwrap();
-                let payload = &m.payload().expect("message has no payload");
-                println!("key: {}", &key);
-                let docs = parse(payload);
-                for (k, delta) in docs {
-                    let id = k.parse::<i32>().unwrap();
-                    let existing = existing_triples(db_conn, id);
-                    let next = apply_delta(existing, delta);
-                    //// Replace
-                    // TODO: Delete existing data
-                    let doc = &Document {
-                        id,
-                        iri: format!("https://id.openraadsinformatie.nl/{}", id),
-                    };
-                    insert_into(self::schema::documents::table)
-                        .values(doc)
-                        .execute(db_conn)
-                        .expect("Error while inserting into documents");
+                let transaction = db_conn.transaction::<(), diesel::result::Error, _>(|| {
+                    //                let _key = str::from_utf8(&m.key().expect("message has no key")).unwrap();
+                    let payload = &m.payload().expect("message has no payload");
+                    let parse_start = SystemTime::now();
+                    let docs = parse(payload);
+                    parse_time += SystemTime::now()
+                        .duration_since(parse_start)
+                        .unwrap()
+                        .as_millis();
 
-                    let mut resource_iris = HashSet::new();
-                    existing.into_iter().for_each(|h| {
-                        resource_iris.insert(h.get(0).unwrap().as_str());
-                    });
-                    let mut new_resources = vec![];
-                    for iri in resource_iris {
-                        new_resources.push(&Resource {
+                    for (k, delta) in docs {
+                        let fetch_start = SystemTime::now();
+                        let id = k.parse::<i32>().unwrap();
+                        let existing = match existing_triples(&db_conn, id) {
+                            Some(data) => {
+                                delete_document(&db_conn, id);
+                                data
+                            }
+                            None => vec![],
+                        };
+                        fetch_time += SystemTime::now()
+                            .duration_since(fetch_start)
+                            .unwrap()
+                            .as_millis();
+                        let next = apply_delta(&existing, delta);
+
+                        //// Replace
+                        // TODO: Delete existing data
+                        let doc = &Document {
                             id,
-                            document_id: id,
-                            iri: String::from(iri),
-                        })
+                            iri: format!("https://id.openraadsinformatie.nl/{}", id),
+                        };
+                        let insert_start = SystemTime::now();
+                        insert_into(self::schema::documents::table)
+                            .values(doc)
+                            .execute(&db_conn)
+                            .expect("Error while inserting into documents");
+
+                        let resources = insert_resources(&db_conn, &next, id);
+                        let mut resource_id_map = HashMap::<String, i32>::new();
+                        for resource in resources {
+                            resource_id_map.insert(resource.iri.clone(), resource.id);
+                        }
+
+                        insert_properties(&db_conn, &next, resource_id_map);
+                        insert_time += SystemTime::now()
+                            .duration_since(insert_start)
+                            .unwrap()
+                            .as_millis();
                     }
 
-                    println!("Inserting {} resources", new_resources.len());
-                    insert_into(self::schema::resources::table)
-                        .values(new_resources)
-                        .execute(db_conn)
-                        .expect("Error while inserting into resources");
+                    // Now that the message is completely processed, add it's position to the offset
+                    // store. The actual offset will be committed every 5 seconds.
+                    if let Err(e) = consumer.store_offset(&m) {
+                        warn!("Error while storing offset: {}", e);
+                    }
 
-                    let properties = existing.into_iter().map(|h| &Property {
-                        id,
-                        // TODO: resolve the proper resource id from above
-                        resource_id: 0,
-                        predicate: h[1],
-                        order: 0,
-                        value: h[2],
-                        datatype: h[3],
-                        language: h[4],
-                        prop_resource: 0,
-                    });
-                    println!("Inserting {} properties", properties.len());
-                    insert_into(self::schema::properties::table)
-                        .values(properties)
-                        .execute(db_conn)
-                        .expect("Error while inserting into resources");
-                }
+                    Ok(())
+                });
 
-                // Now that the message is completely processed, add it's position to the offset
-                // store. The actual offset will be committed every 5 seconds.
-                if let Err(e) = consumer.store_offset(&m) {
-                    warn!("Error while storing offset: {}", e);
+                match transaction {
+                    Ok(_) => print!("."),
+                    Err(_) => print!("e"),
+                };
+                i += 1;
+                if i > 5 {
+                    println!(
+                        "\nTiming: parse: {}, fetch/del: {}, insert: {}",
+                        parse_time, fetch_time, insert_time
+                    );
+                    parse_time = 0;
+                    fetch_time = 0;
+                    insert_time = 0;
+
+                    io::stdout().flush().expect("Flush to stdout failed");
+                    i = 0;
                 }
             }
         }
     }
 
     Ok(())
+}
+
+fn delete_document(db_conn: &PgConnection, doc_id: i32) {
+    use schema::documents::dsl::*;
+
+    println!("start delete");
+    let test = id.eq(doc_id);
+    diesel::delete(documents.filter(test))
+        .execute(db_conn)
+        .expect("Tried to delete nonexisting document");
+    println!("deleted resource");
+}
+
+fn insert_resources(db_conn: &PgConnection, model: &Model, id: i32) -> Vec<Resource> {
+    let mut resource_iris = HashSet::new();
+    for hex in model {
+        resource_iris.insert(hex.get(0).unwrap().clone());
+    }
+    let mut new_resources = vec![];
+    for r_iri in resource_iris {
+        new_resources.push(NewResource {
+            document_id: id,
+            iri: r_iri,
+        })
+    }
+
+    insert_into(self::schema::resources::table)
+        .values(&new_resources)
+        .get_results(db_conn)
+        .expect("Error while inserting into resources")
+}
+
+fn insert_properties(db_conn: &PgConnection, model: &Model, resource_id_map: HashMap<String, i32>) {
+    let mut properties = vec![];
+
+    for h in model {
+        let resource_id = *resource_id_map
+            .get(&h[0])
+            .expect("Inserting property not inserted in resources");
+
+        properties.push(NewProperty {
+            resource_id,
+            predicate: String::from(&h[1]),
+            order: None,
+            value: String::from(&h[2]),
+            datatype: String::from(&h[3]),
+            language: String::from(&h[4]),
+            prop_resource: None,
+        });
+    }
+
+    insert_into(self::schema::properties::table)
+        .values(&properties)
+        .execute(db_conn)
+        .expect("Error while inserting into resources");
 }
 
 fn get_doc_count(db_conn: &PgConnection) {
@@ -172,9 +246,14 @@ fn get_document(
         .load::<Resource>(db_conn)
         .unwrap();
 
-    let properties: Vec<Property> = Property::belonging_to(&resources)
-        .load::<Property>(db_conn)
-        .unwrap();
+    let properties: Vec<Property> =
+        match Property::belonging_to(&resources).load::<Property>(db_conn) {
+            Ok(res) => res,
+            Err(e) => {
+                println!("{:?}", e);
+                vec![]
+            }
+        };
 
     let grouped_properties: Vec<Vec<Property>> = properties.grouped_by(&resources);
 
@@ -183,14 +262,16 @@ fn get_document(
         .zip(grouped_properties)
         .grouped_by(&docs);
 
-    return docs.into_iter().zip(resources_and_properties).collect();
+    docs.into_iter().zip(resources_and_properties).collect()
 }
 
-fn existing_triples(db_conn: &PgConnection, id: i32) -> Model {
+fn existing_triples(db_conn: &PgConnection, id: i32) -> Option<Model> {
     let doc = get_document(db_conn, id);
     let first = doc.first();
 
-    return if doc.len() > 0 {
+    if doc.is_empty() {
+        None
+    } else {
         let mut props: Vec<Hextuple> = vec![];
         let (doc, resources) = first.unwrap();
         for (resource, properties) in resources {
@@ -211,12 +292,8 @@ fn existing_triples(db_conn: &PgConnection, id: i32) -> Model {
             props.len()
         );
 
-        props
-    // TODO: (fetch &) convert properties
-    } else {
-        println!("Processing new document: {}", id);
-        vec![]
-    };
+        Some(props)
+    }
 }
 
 fn parse(payload: &[u8]) -> HashMap<String, Vec<Hextuple>> {
@@ -249,7 +326,7 @@ fn test(
     let id = test
         .last()
         .unwrap()
-        .split("/")
+        .split('/')
         .last()
         .expect("Graph not properly formatted");
     if !map.contains_key(id) {
@@ -262,27 +339,41 @@ fn test(
         obj[0].clone(),
         obj[1].clone(),
         obj[2].clone(),
-        delta_op.to_string(),
+        (*delta_op).to_string(),
     ]);
 }
 
 fn str_from_iri_or_bn(t: &NamedOrBlankNode) -> String {
-    return match t {
+    match t {
         NamedOrBlankNode::BlankNode(bn) => String::from(bn.id),
         NamedOrBlankNode::NamedNode(nn) => String::from(nn.iri),
-    };
+    }
 }
 
 fn str_from_term(t: Term) -> [String; 3] {
-    return match t {
-        Term::BlankNode(bn) => [String::from(bn.id), "".into(), "".into()],
-        Term::NamedNode(nn) => [String::from(nn.iri), "".into(), "".into()],
-        Term::Literal(Literal::Simple { value }) => [value.into(), "".into(), "".into()],
-        Term::Literal(Literal::LanguageTaggedString { value, language }) => {
-            [value.into(), "".into(), language.into()]
-        }
+    match t {
+        Term::BlankNode(bn) => [
+            String::from(bn.id),
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#blankNode".into(),
+            "".into(),
+        ],
+        Term::NamedNode(nn) => [
+            String::from(nn.iri),
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#namedNode".into(),
+            "".into(),
+        ],
+        Term::Literal(Literal::Simple { value }) => [
+            value.into(),
+            "http://www.w3.org/2001/XMLSchema#string".into(),
+            "".into(),
+        ],
+        Term::Literal(Literal::LanguageTaggedString { value, language }) => [
+            value.into(),
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString".into(),
+            language.into(),
+        ],
         Term::Literal(Literal::Typed { value, datatype }) => {
             [value.into(), datatype.iri.into(), "".into()]
         }
-    };
+    }
 }
