@@ -101,7 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .duration_since(fetch_start)
                             .unwrap()
                             .as_millis();
-                        let next = apply_delta(&existing, delta);
+
+                        let next = apply_delta(&existing, &delta);
 
                         //// Replace
                         let insert_start = SystemTime::now();
