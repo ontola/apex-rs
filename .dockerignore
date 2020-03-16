@@ -1,0 +1,6 @@
+target
+certs
+Dockerfile
+README.md
+.env
+.env.template
