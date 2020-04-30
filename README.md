@@ -1,4 +1,7 @@
+### Getting started
+Ensure a `.env` is present with a `DATABASE_URL` pointing to postgres.
 
+Run `diesel setup` to initialize the schema.
 
 ### osx
 For compiling

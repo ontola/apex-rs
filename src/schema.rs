@@ -1,59 +1,55 @@
 table! {
-    documents {
-        id -> Integer,
-        iri -> VarChar,
+    datatypes (id) {
+        id -> Int4,
+        value -> Varchar,
     }
 }
 
 table! {
-    resources {
-        id -> Integer,
-        document_id -> Integer,
-        iri -> VarChar,
-    }
-}
-joinable!(resources -> documents (document_id));
-allow_tables_to_appear_in_same_query!(resources, documents);
-
-table! {
-    datatypes {
-        id -> Integer,
-        value -> VarChar,
+    documents (id) {
+        id -> Int8,
+        iri -> Varchar,
     }
 }
 
 table! {
-    predicates {
-        id -> Integer,
-        value -> VarChar,
+    languages (id) {
+        id -> Int4,
+        value -> Varchar,
     }
 }
 
 table! {
-    languages {
-        id -> Integer,
-        value -> VarChar,
+    predicates (id) {
+        id -> Int4,
+        value -> Varchar,
     }
 }
 
 table! {
-    properties(resource_id, predicate_id, order)  {
-        resource_id -> Integer,
-        predicate_id -> Integer,
-        order -> Nullable<Integer>,
-        value -> VarChar,
-        datatype_id -> Integer,
-        language_id -> Nullable<Integer>,
-        prop_resource -> Nullable<Integer>,
+    properties (id) {
+        id -> Int8,
+        resource_id -> Int8,
+        predicate_id -> Int4,
+        order -> Int4,
+        prop_resource -> Nullable<Int8>,
+        datatype_id -> Int4,
+        language_id -> Nullable<Int4>,
+        value -> Varchar,
     }
 }
 
-joinable!(properties -> predicates (predicate_id));
-joinable!(properties -> datatypes (datatype_id));
+table! {
+    resources (id) {
+        id -> Int8,
+        document_id -> Int8,
+        iri -> Varchar,
+    }
+}
+
 joinable!(properties -> resources (resource_id));
+joinable!(resources -> documents (document_id));
 
-allow_tables_to_appear_in_same_query!(properties, resources);
-allow_tables_to_appear_in_same_query!(properties, documents);
-allow_tables_to_appear_in_same_query!(properties, datatypes);
-allow_tables_to_appear_in_same_query!(properties, predicates);
-allow_tables_to_appear_in_same_query!(properties, languages);
+allow_tables_to_appear_in_same_query!(
+    datatypes, documents, languages, predicates, properties, resources,
+);
