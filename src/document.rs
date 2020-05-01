@@ -67,11 +67,6 @@ pub(crate) fn reset_document<'a>(
                 ]);
             }
         }
-        println!(
-            "Fetched document: {} with {} existing properties",
-            doc.iri,
-            props.len()
-        );
 
         delete_document_data(ctx.db_conn, id)
     }

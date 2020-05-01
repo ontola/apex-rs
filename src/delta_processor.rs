@@ -1,4 +1,6 @@
+use crate::events::DeltaProcessingTiming;
 use crate::hashtuple::{HashModel, Hashtuple, LookupTable};
+use std::time::Instant;
 
 const LD_ADD: &str = "http://purl.org/linked-delta/add";
 const LD_REPLACE: &str = "http://purl.org/linked-delta/replace";
@@ -38,17 +40,22 @@ pub fn add_processor_methods_to_table(lookup_table: &mut LookupTable) {
 }
 
 /// FIXME: Be sure to call `add_processor_methods_to_table` on the `lookup_table` beforehand.
-pub fn apply_delta<'a>(
-    lookup_table: &'a LookupTable,
+pub fn apply_delta(
+    lookup_table: &LookupTable,
     current: &HashModel,
     delta: &HashModel,
-) -> HashModel {
+) -> (HashModel, DeltaProcessingTiming) {
+    let mut timing = DeltaProcessingTiming::new();
+    let setup_start = Instant::now();
     let processors = default_processors(lookup_table);
 
     let mut result = current.clone();
     let mut addable: HashModel = vec![];
     let mut replaceable: HashModel = vec![];
     let mut removable: HashModel = vec![];
+
+    let setup_end = Instant::now();
+    timing.setup_time = setup_end.duration_since(setup_start);
 
     for statement in delta {
         let processor = processors.iter().find(|p| p.matches(*statement));
@@ -62,12 +69,27 @@ pub fn apply_delta<'a>(
             removable.extend(removes);
         }
     }
+    let sort_end = Instant::now();
+    timing.sort_time = sort_end.duration_since(setup_end);
 
-    result = remove_all(&result, &removable);
-    result = replace_matches(&mut result, &replaceable);
-    add_all(&mut result, &addable);
+    let remove_end = Instant::now();
+    if !removable.is_empty() {
+        result = remove_all(&result, &removable);
+    }
+    timing.remove_time = remove_end.duration_since(sort_end);
 
-    result
+    if !replaceable.is_empty() {
+        result = replace_matches(&mut result, &replaceable);
+    }
+    let replace_end = Instant::now();
+    timing.replace_time = replace_end.duration_since(remove_end);
+
+    if !addable.is_empty() {
+        add_all(&mut result, &addable);
+    }
+    timing.add_time = Instant::now().duration_since(replace_end);
+
+    (result, timing)
 }
 
 fn remove_all(cur: &HashModel, patch: &HashModel) -> HashModel {
@@ -81,11 +103,12 @@ fn remove_all(cur: &HashModel, patch: &HashModel) -> HashModel {
     next
 }
 
+/// TODO: reverse
 fn replace_matches(cur: &mut HashModel, patch: &HashModel) -> HashModel {
     let mut cleaned: HashModel = Vec::with_capacity(patch.len());
-    for st in cur {
-        match patch.iter().find(|x| x[0] == st[0] && x[1] == st[1]) {
-            Some(patch_value) => cleaned.push(patch_value.clone()),
+    for st in patch {
+        match cur.iter().find(|x| x[0] == st[0] && x[1] == st[1]) {
+            Some(patch_value) => cleaned.push(*patch_value),
             None => cleaned.push(*st),
         }
     }
@@ -94,33 +117,22 @@ fn replace_matches(cur: &mut HashModel, patch: &HashModel) -> HashModel {
 }
 
 fn add_all(cur: &mut HashModel, patch: &HashModel) {
-    for h in patch {
-        if !contains(&cur, h) {
-            cur.push(*h)
-        }
-    }
+    let mut matches = patch
+        .into_iter()
+        .filter(|h| !contains(&cur, h))
+        .cloned()
+        .collect::<Vec<Hashtuple>>();
+
+    cur.append(matches.as_mut());
 }
 
 fn contains(model: &HashModel, h: &Hashtuple) -> bool {
-    model.iter().find(|x| equals(x, h)).is_some()
+    model.iter().any(|x| equals(x, h))
 }
 
 fn equals(a: &Hashtuple, b: &Hashtuple) -> bool {
     a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3] && a[4] == b[4] && a[5] == b[5]
 }
-
-// fn hex_without_context(hex: &Hashtuple) -> Hashtuple {
-//     [
-//         hex[0],
-//         hex[1],
-//         hex[2],
-//         hex[3],
-//         hex[4],
-//         String::from("rdf:defaultGraph"),
-//     ]
-// }
-
-// struct SupplantProcessor {}
 
 struct AddProcessor<'a> {
     lookup_table: &'a LookupTable,
@@ -133,10 +145,10 @@ impl<'a> DeltaProcessor<'a> for AddProcessor<'a> {
     fn process(
         &self,
         _: &HashModel,
-        delta: &HashModel,
-        _: Hashtuple,
+        _: &HashModel,
+        st: Hashtuple,
     ) -> (HashModel, HashModel, HashModel) {
-        let adds = delta.clone();
+        let adds = vec![st];
         let replaces = Vec::with_capacity(0);
         let removes = Vec::with_capacity(0);
 
@@ -165,13 +177,12 @@ impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
     fn process(
         &self,
         _: &HashModel,
-        delta: &HashModel,
+        _: &HashModel,
         st: Hashtuple,
     ) -> (HashModel, HashModel, HashModel) {
-        let adds = delta.clone();
         let replaces = vec![st];
 
-        (adds, replaces, Vec::with_capacity(0))
+        (Vec::with_capacity(0), replaces, Vec::with_capacity(0))
     }
 }
 impl<'a> ProcessorInitializer for ReplaceProcessor<'a> {
@@ -187,3 +198,58 @@ impl<'a> ProcessorInitializer for ReplaceProcessor<'a> {
 // struct PurgeProcessor {}
 //
 // struct SliceProcessor {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_delta_with_replace() {
+        let mut lookup_table = LookupTable::new();
+        add_processor_methods_to_table(&mut lookup_table);
+        let named_node = lookup_table.ensure_value(&String::from("rdf:namedNode"));
+        let string = lookup_table.ensure_value(&String::from("xsd:string"));
+        let replace = lookup_table.ensure_value(&String::from(LD_REPLACE));
+
+        let name = lookup_table.ensure_value(&String::from("https://schema.org/name"));
+        let homepage = lookup_table.ensure_value(&String::from("https://schema.org/homepage"));
+        let comment = lookup_table.ensure_value(&String::from("https://schema.org/comment"));
+
+        let id = lookup_table.ensure_value(&String::from("https://id.openraadsinformatie.nl/1234"));
+        let bob = lookup_table.ensure_value(&String::from("bob"));
+        let bob_corrected = lookup_table.ensure_value(&String::from("Bob"));
+        let empty = lookup_table.ensure_value(&String::from(""));
+        let bobs_homepage = lookup_table.ensure_value(&String::from("https://bob.com"));
+        let comment0 = lookup_table.ensure_value(&String::from("Comment 0"));
+        let comment1 = lookup_table.ensure_value(&String::from("Comment 1"));
+
+        let cur: HashModel = vec![[id, name, bob, string, empty, empty]];
+        let patch: HashModel = vec![
+            [id, name, bob_corrected, string, empty, replace],
+            [id, homepage, bobs_homepage, named_node, empty, replace],
+            [id, comment, comment0, string, empty, replace],
+            [id, comment, comment1, named_node, empty, replace],
+        ];
+
+        let (out, _) = apply_delta(&mut lookup_table, &cur, &patch);
+
+        assert_eq!(out.len(), 4);
+        assert_eq!(cur.len(), 1);
+        assert_eq!(patch.len(), 4);
+    }
+
+    #[test]
+    fn test_add_all() {
+        let mut cur: HashModel = vec![[2u128, 0u128, 0u128, 0u128, 0u128, 0u128]];
+        let patch: HashModel = vec![
+            [0u128, 0u128, 0u128, 0u128, 0u128, 0u128],
+            [1u128, 0u128, 0u128, 0u128, 0u128, 0u128],
+            [2u128, 0u128, 0u128, 0u128, 0u128, 0u128],
+            [3u128, 0u128, 0u128, 0u128, 0u128, 0u128],
+        ];
+
+        add_all(&mut cur, &patch);
+
+        assert_eq!(cur.len(), 4)
+    }
+}

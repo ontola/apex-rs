@@ -15,11 +15,13 @@ mod importer;
 mod models;
 mod parsing;
 mod properties;
+mod reporter;
 mod resources;
 mod schema;
 
 use crate::events::MessageTiming;
 use crate::importer::*;
+use crate::reporter::report;
 use dotenv::dotenv;
 use tokio::sync::mpsc::*;
 
@@ -31,5 +33,5 @@ async fn main() {
 
     let (mut tx, mut rx) = channel::<MessageTiming>(100);
 
-    import(&mut tx).await.unwrap();
+    tokio::try_join!(import(&mut tx), report(&mut rx));
 }

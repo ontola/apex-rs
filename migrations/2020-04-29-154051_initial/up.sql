@@ -75,7 +75,7 @@ CREATE TABLE properties
     prop_resource BIGINT,
     datatype_id integer NOT NULL,
     language_id integer,
-    value character varying(1000000) NOT NULL,
+    value character varying(10000000) NOT NULL,
     CONSTRAINT fk_properties_resource_id_id FOREIGN KEY (resource_id)
         REFERENCES resources (id) MATCH SIMPLE
         ON UPDATE RESTRICT

@@ -3,6 +3,8 @@ use crate::hashtuple::{HashModel, LookupTable};
 use crate::models::{Datatype, Predicate};
 use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use std::collections::HashMap;
+use std::thread;
+use std::time::Duration;
 
 pub(crate) fn insert_properties(
     ctx: &mut DbContext,
@@ -13,6 +15,15 @@ pub(crate) fn insert_properties(
     use crate::schema::properties::dsl;
 
     let mut properties = vec![];
+
+    if model.len() > 65000 {
+        println!(
+            "Giant model detected (properties: {}, id: {})",
+            model.len(),
+            lookup_table.get_by_hash(model[0][0])
+        );
+        dump_model_to_screen(&lookup_table, &model);
+    }
 
     for h in model {
         let resource_id = *resource_id_map
@@ -96,4 +107,24 @@ fn insert_and_update_datatype(
     map.entry(p.value).or_insert(p.id);
 
     p.id
+}
+
+fn dump_model_to_screen(lookup_table: &LookupTable, model: &HashModel) {
+    let mut output: String = String::from("");
+    thread::sleep(Duration::new(5, 0));
+
+    for hashtuple in model {
+        output += format!(
+            "[{}, {}, {}, {}, {}, {}]\n",
+            lookup_table.get_by_hash(hashtuple[0]),
+            lookup_table.get_by_hash(hashtuple[1]),
+            lookup_table.get_by_hash(hashtuple[2]),
+            lookup_table.get_by_hash(hashtuple[3]),
+            lookup_table.get_by_hash(hashtuple[4]),
+            lookup_table.get_by_hash(hashtuple[5]),
+        )
+        .as_ref();
+    }
+
+    println!("{}\n", output);
 }
