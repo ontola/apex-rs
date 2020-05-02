@@ -6,7 +6,7 @@ use apex_rs::serving::serve;
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "app=info,actix_web=info,diesel=debug");
+    std::env::set_var("RUST_LOG", "app=debug,actix_web=info,diesel=debug");
     env_logger::init();
 
     serve().await

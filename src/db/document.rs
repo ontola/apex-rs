@@ -30,7 +30,7 @@ pub fn doc_by_id<'a>(
     let first = doc.first();
 
     if doc.is_empty() {
-        debug!(target: "app", "Doc is empty");
+        debug!(target: "app", "Doc with id '{}' is empty", id);
         return None;
     }
 

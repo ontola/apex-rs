@@ -1,3 +1,4 @@
+mod bulk;
 mod serialization;
 mod server;
 mod show_resource;
