@@ -21,6 +21,49 @@ pub(crate) fn get_doc_count(db_conn: &PgConnection) {
     );
 }
 
+pub fn doc_by_id<'a>(
+    ctx: &DbContext,
+    lookup_table: &'a mut LookupTable,
+    id: i64,
+) -> Option<HashModel> {
+    let doc = get_document(&ctx.get_conn(), id);
+    let first = doc.first();
+
+    if doc.is_empty() {
+        debug!(target: "app", "Doc is empty");
+        return None;
+    }
+
+    let mut props: HashModel = vec![];
+    let (_, resources) = first.unwrap();
+    for (resource, properties) in resources {
+        for p in properties {
+            let predicate = ctx
+                .property_map
+                .iter()
+                .find(|(_, v)| **v == p.predicate_id)
+                .unwrap()
+                .0;
+            let datatype = ctx
+                .datatype_map
+                .iter()
+                .find(|(_, v)| **v == p.datatype_id)
+                .unwrap()
+                .0;
+            props.push([
+                lookup_table.ensure_value(&resource.iri),
+                lookup_table.ensure_value(predicate),
+                lookup_table.ensure_value(&p.value),
+                lookup_table.ensure_value(datatype),
+                lookup_table.ensure_value(&String::from(EMPTY_STRING)), // p.language.clone()
+                lookup_table.ensure_value(&String::from(EMPTY_STRING)),
+            ]);
+        }
+    }
+
+    Some(props)
+}
+
 const EMPTY_STRING: &str = "";
 
 pub(crate) fn reset_document<'a>(
@@ -28,50 +71,24 @@ pub(crate) fn reset_document<'a>(
     lookup_table: &'a mut LookupTable,
     id: i64,
 ) -> HashModel {
-    let doc = get_document(ctx.db_conn, id);
-    let first = doc.first();
-    let mut props: HashModel = vec![];
+    match doc_by_id(&ctx, lookup_table, id) {
+        None => {
+            let doc = &Document {
+                id,
+                iri: format!("https://id.openraadsinformatie.nl/{}", id),
+            };
+            insert_into(schema::documents::table)
+                .values(doc)
+                .execute(&ctx.get_conn())
+                .expect("Error while inserting into documents");
 
-    if doc.is_empty() {
-        let doc = &Document {
-            id,
-            iri: format!("https://id.openraadsinformatie.nl/{}", id),
-        };
-        insert_into(schema::documents::table)
-            .values(doc)
-            .execute(ctx.db_conn)
-            .expect("Error while inserting into documents");
-    } else {
-        let (_, resources) = first.unwrap();
-        for (resource, properties) in resources {
-            for p in properties {
-                let predicate = ctx
-                    .property_map
-                    .iter()
-                    .find(|(_, v)| **v == p.predicate_id)
-                    .unwrap()
-                    .0;
-                let datatype = ctx
-                    .datatype_map
-                    .iter()
-                    .find(|(_, v)| **v == p.datatype_id)
-                    .unwrap()
-                    .0;
-                props.push([
-                    lookup_table.ensure_value(&resource.iri),
-                    lookup_table.ensure_value(predicate),
-                    lookup_table.ensure_value(&p.value),
-                    lookup_table.ensure_value(datatype),
-                    lookup_table.ensure_value(&String::from(EMPTY_STRING)), // p.language.clone()
-                    lookup_table.ensure_value(&String::from(EMPTY_STRING)),
-                ]);
-            }
+            vec![]
         }
-
-        delete_document_data(ctx.db_conn, id)
+        Some(model) => {
+            delete_document_data(&ctx.get_conn(), id);
+            model
+        }
     }
-
-    props
 }
 
 fn delete_document_data(db_conn: &PgConnection, doc_id: i64) {

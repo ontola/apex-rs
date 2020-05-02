@@ -18,7 +18,7 @@ pub(crate) fn insert_properties(
     let mut properties = vec![];
 
     if model.len() > 65000 {
-        println!(
+        error!(
             "Giant model detected (properties: {}, id: {})",
             model.len(),
             lookup_table.get_by_hash(model[0][0])
@@ -33,11 +33,11 @@ pub(crate) fn insert_properties(
 
         let predicate = lookup_table.get_by_hash(h[1]);
         if !ctx.property_map.contains_key(predicate) {
-            insert_and_update(ctx.db_conn, &mut ctx.property_map, predicate);
+            insert_and_update(&ctx.get_conn(), &mut ctx.property_map, predicate);
         }
         let datatype = lookup_table.get_by_hash(h[3]);
         if !ctx.datatype_map.contains_key(datatype) {
-            insert_and_update_datatype(ctx.db_conn, &mut ctx.datatype_map, datatype);
+            insert_and_update_datatype(&ctx.get_conn(), &mut ctx.datatype_map, datatype);
         }
 
         let pred_id: i32 = *ctx.property_map.get_mut(predicate).unwrap();
@@ -62,7 +62,7 @@ pub(crate) fn insert_properties(
 
     insert_into(schema::properties::table)
         .values(&properties)
-        .execute(ctx.db_conn)
+        .execute(&ctx.get_conn())
         .expect("Error while inserting into resources");
 }
 
@@ -127,5 +127,5 @@ fn dump_model_to_screen(lookup_table: &LookupTable, model: &HashModel) {
         .as_ref();
     }
 
-    println!("{}\n", output);
+    error!("{}\n", output);
 }

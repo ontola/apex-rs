@@ -1,0 +1,18 @@
+extern crate apex_rs;
+
+use apex_rs::importing::events::MessageTiming;
+use apex_rs::importing::importer::import;
+use apex_rs::reporting::reporter::report;
+use dotenv::dotenv;
+use tokio::sync::mpsc::*;
+
+#[tokio::main]
+async fn main() {
+    println!("Booting");
+    dotenv().ok();
+    println!("Initialized .env");
+
+    let (mut tx, mut rx) = channel::<MessageTiming>(100);
+
+    tokio::try_join!(import(&mut tx), report(&mut rx));
+}

@@ -1,4 +1,4 @@
-use crate::db::db_context::{create_context, DbContext};
+use crate::db::db_context::DbContext;
 use crate::db::document::reset_document;
 use crate::db::properties::insert_properties;
 use crate::db::resources::insert_resources;
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tokio::task;
 
-pub(crate) async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
+pub async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
     let consumer = create_kafka_consumer().expect("Failed to create kafka consumer");
     println!("Initialized kafka config");
 
@@ -27,13 +27,12 @@ pub(crate) async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()
         .subscribe(&[topic])
         .expect("Subscribing to topic failed");
 
-    let db_conn = PgConnection::establish(dotenv!("DATABASE_URL")).expect("Error connecting to pg");
-
     //    get_doc_count(db_conn);
 
     let mut stream = consumer.start();
 
-    let mut ctx = create_context(&db_conn);
+    let pool = DbContext::default_pool();
+    let mut ctx = DbContext::new(&pool);
     println!("Start listening for messages");
     let mut last_listen_time = Instant::now();
 
@@ -67,7 +66,9 @@ pub(crate) async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()
 async fn process_message<'a>(ctx: &mut DbContext<'a>, m: &BorrowedMessage<'a>) -> MessageTiming {
     let mut timing: MessageTiming = MessageTiming::new();
 
-    ctx.db_conn
+    ctx.db_pool
+        .get()
+        .unwrap()
         .transaction::<(), diesel::result::Error, _>(|| {
             let payload = &m.payload().expect("message has no payload");
             timing = process_delta(ctx, payload).expect("process_message failed");
@@ -103,7 +104,7 @@ pub(crate) fn process_delta<'a>(
         delta_time += delta_timing;
 
         let insert_start = Instant::now();
-        let resources = insert_resources(ctx.db_conn, &lookup_table, &next, id);
+        let resources = insert_resources(&ctx.get_conn(), &lookup_table, &next, id);
         let mut resource_id_map = HashMap::<String, i64>::new();
         for resource in resources {
             resource_id_map.insert(resource.iri.clone(), resource.id);

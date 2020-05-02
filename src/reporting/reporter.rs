@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::*;
 use tokio::task;
 
-pub(crate) async fn report(rx: &mut Receiver<MessageTiming>) -> Result<(), ()> {
+pub async fn report(rx: &mut Receiver<MessageTiming>) -> Result<(), ()> {
     let stdout = stdout();
     let mut stdout = stdout.lock();
     println!("Reported started");
