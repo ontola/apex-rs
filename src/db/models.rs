@@ -1,4 +1,4 @@
-use crate::schema::*;
+use crate::db::schema::*;
 
 #[derive(Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable)]
 pub struct Document {

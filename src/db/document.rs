@@ -1,7 +1,7 @@
-use crate::db_context::DbContext;
+use crate::db::db_context::DbContext;
+use crate::db::models::*;
+use crate::db::schema;
 use crate::hashtuple::{HashModel, LookupTable};
-use crate::models::*;
-use crate::schema;
 use diesel::insert_into;
 use diesel::prelude::*;
 
@@ -37,12 +37,12 @@ pub(crate) fn reset_document<'a>(
             id,
             iri: format!("https://id.openraadsinformatie.nl/{}", id),
         };
-        insert_into(crate::schema::documents::table)
+        insert_into(schema::documents::table)
             .values(doc)
             .execute(ctx.db_conn)
             .expect("Error while inserting into documents");
     } else {
-        let (doc, resources) = first.unwrap();
+        let (_, resources) = first.unwrap();
         for (resource, properties) in resources {
             for p in properties {
                 let predicate = ctx
@@ -78,7 +78,6 @@ fn delete_document_data(db_conn: &PgConnection, doc_id: i64) {
     use schema::properties;
     use schema::resources::dsl::*;
 
-    println!("start delete");
     let resource_ids = resources
         .select(id)
         .filter(document_id.eq(doc_id))
@@ -95,8 +94,6 @@ fn delete_document_data(db_conn: &PgConnection, doc_id: i64) {
         .filter(id.eq_any(&resource_ids))
         .execute(db_conn)
         .expect("Couldn't delete existing resources");
-
-    println!("deleted resource");
 }
 
 fn get_document(

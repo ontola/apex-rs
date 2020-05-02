@@ -1,6 +1,7 @@
-use crate::db_context::DbContext;
+use crate::db::db_context::DbContext;
+use crate::db::models::{Datatype, Predicate};
+use crate::db::schema;
 use crate::hashtuple::{HashModel, LookupTable};
-use crate::models::{Datatype, Predicate};
 use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use std::collections::HashMap;
 use std::thread;
@@ -12,7 +13,7 @@ pub(crate) fn insert_properties(
     model: &HashModel,
     resource_id_map: HashMap<String, i64>,
 ) {
-    use crate::schema::properties::dsl;
+    use schema::properties::dsl;
 
     let mut properties = vec![];
 
@@ -59,7 +60,7 @@ pub(crate) fn insert_properties(
         ));
     }
 
-    insert_into(crate::schema::properties::table)
+    insert_into(schema::properties::table)
         .values(&properties)
         .execute(ctx.db_conn)
         .expect("Error while inserting into resources");
@@ -70,7 +71,7 @@ fn insert_and_update(
     map: &mut HashMap<String, i32>,
     insert_value: &str,
 ) -> i32 {
-    use crate::schema::predicates::dsl::*;
+    use schema::predicates::dsl::*;
 
     let target = value.eq(insert_value);
     let p = insert_into(predicates)
@@ -92,7 +93,7 @@ fn insert_and_update_datatype(
     map: &mut HashMap<String, i32>,
     insert_value: &str,
 ) -> i32 {
-    use crate::schema::datatypes::dsl::*;
+    use schema::datatypes::dsl::*;
 
     let target = value.eq(insert_value);
     let p = insert_into(datatypes)

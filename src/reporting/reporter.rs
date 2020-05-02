@@ -1,4 +1,4 @@
-use crate::events::MessageTiming;
+use crate::importing::events::MessageTiming;
 use humantime::format_duration;
 use std::collections::VecDeque;
 use std::io::{stdout, Write};
@@ -22,10 +22,11 @@ pub(crate) async fn report(rx: &mut Receiver<MessageTiming>) -> Result<(), ()> {
     for _ in 0..1_000 {
         last_messages.push_back(Instant::now())
     }
-    let mut io_limiter = 0;
+    let mut io_limiter: i8 = 0;
 
     loop {
         let msg = rx.recv().await.unwrap();
+        let reporter_time = Instant::now();
         let last_message = last_messages.pop_front().unwrap();
         let current_time = Instant::now();
         last_messages.push_back(current_time);
@@ -122,6 +123,11 @@ pub(crate) async fn report(rx: &mut Receiver<MessageTiming>) -> Result<(), ()> {
         stdout.write_all(avg.as_bytes()).unwrap();
         stdout.write_all(total.as_bytes()).unwrap();
         stdout.write_all(grand_total.as_bytes()).unwrap();
+        stdout
+            .write_all(
+                humanize("Reporter", Instant::now().duration_since(reporter_time)).as_bytes(),
+            )
+            .unwrap();
 
         stdout.flush().unwrap();
         task::yield_now().await;

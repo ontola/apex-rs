@@ -1,5 +1,5 @@
-use crate::events::DeltaProcessingTiming;
 use crate::hashtuple::{HashModel, Hashtuple, LookupTable};
+use crate::importing::events::DeltaProcessingTiming;
 use std::time::Instant;
 
 const LD_ADD: &str = "http://purl.org/linked-delta/add";

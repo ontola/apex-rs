@@ -1,4 +1,5 @@
-use crate::models::{Datatype, Predicate};
+use crate::db::models::{Datatype, Predicate};
+use crate::db::schema;
 use diesel::prelude::*;
 use diesel::PgConnection;
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ pub(crate) fn create_context(db_conn: &diesel::PgConnection) -> DbContext {
  * Retrieve a map of data type IRIs to their ids from the db.
  */
 fn get_datatypes(db_conn: &PgConnection) -> IRIMapping {
-    use crate::schema::datatypes::dsl::*;
+    use schema::datatypes::dsl::*;
 
     let mut map = HashMap::new();
     let props = datatypes
@@ -42,7 +43,7 @@ fn get_datatypes(db_conn: &PgConnection) -> IRIMapping {
  * Retrieve a map of predicate IRIs to their ids from the db.
  */
 fn get_predicates(db_conn: &PgConnection) -> IRIMapping {
-    use crate::schema::predicates::dsl::*;
+    use schema::predicates::dsl::*;
 
     let mut map = HashMap::new();
     let props = predicates

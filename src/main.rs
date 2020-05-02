@@ -6,22 +6,14 @@ extern crate diesel;
 #[macro_use]
 extern crate dotenv_codegen;
 
-mod db_context;
-mod delta_processor;
-mod document;
-mod events;
+mod db;
 mod hashtuple;
-mod importer;
-mod models;
-mod parsing;
-mod properties;
-mod reporter;
-mod resources;
-mod schema;
+mod importing;
+mod reporting;
 
-use crate::events::MessageTiming;
-use crate::importer::*;
-use crate::reporter::report;
+use crate::importing::events::MessageTiming;
+use crate::importing::importer::import;
+use crate::reporting::reporter::report;
 use dotenv::dotenv;
 use tokio::sync::mpsc::*;
 

@@ -1,11 +1,11 @@
-use crate::db_context::{create_context, DbContext};
-use crate::delta_processor::{add_processor_methods_to_table, apply_delta};
-use crate::document::reset_document;
-use crate::events::{DeltaProcessingTiming, MessageTiming};
+use crate::db::db_context::{create_context, DbContext};
+use crate::db::document::reset_document;
+use crate::db::properties::insert_properties;
+use crate::db::resources::insert_resources;
 use crate::hashtuple::LookupTable;
-use crate::parsing::parse;
-use crate::properties::insert_properties;
-use crate::resources::insert_resources;
+use crate::importing::delta_processor::{add_processor_methods_to_table, apply_delta};
+use crate::importing::events::{DeltaProcessingTiming, MessageTiming};
+use crate::importing::parsing::parse;
 use diesel::prelude::*;
 use futures::StreamExt;
 use rdkafka::config::RDKafkaLogLevel;
