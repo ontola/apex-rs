@@ -2,8 +2,8 @@ use crate::db::db_context::DbContext;
 use crate::db::models::*;
 use crate::db::schema;
 use crate::hashtuple::{HashModel, LookupTable};
-use diesel::insert_into;
 use diesel::prelude::*;
+use diesel::query_builder::SqlQuery;
 
 pub(crate) fn get_doc_count(db_conn: &PgConnection) {
     use diesel::dsl;
@@ -64,6 +64,23 @@ pub fn doc_by_id<'a>(
     Some(props)
 }
 
+const RANDOM_DOC_ID: &str = "SELECT *
+FROM  (
+    SELECT DISTINCT 1 + trunc(random() * 5100000)::integer AS id
+    FROM   generate_series(1, 1100) g
+    ) r
+JOIN documents USING (id)
+LIMIT  1;";
+
+pub fn random_doc<'a>(ctx: &DbContext, lookup_table: &'a mut LookupTable) -> Option<HashModel> {
+    let random_id = diesel::sql_query(RANDOM_DOC_ID)
+        .get_result::<Document>(&ctx.get_conn())
+        .unwrap()
+        .id;
+
+    doc_by_id(ctx, lookup_table, random_id)
+}
+
 const EMPTY_STRING: &str = "";
 
 pub(crate) fn reset_document<'a>(
@@ -77,7 +94,7 @@ pub(crate) fn reset_document<'a>(
                 id,
                 iri: format!("https://id.openraadsinformatie.nl/{}", id),
             };
-            insert_into(schema::documents::table)
+            diesel::insert_into(schema::documents::table)
                 .values(doc)
                 .execute(&ctx.get_conn())
                 .expect("Error while inserting into documents");

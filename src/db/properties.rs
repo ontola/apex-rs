@@ -59,6 +59,15 @@ pub(crate) fn insert_properties(
             //            dsl::prop_resource.eq(None),
         ));
     }
+    if properties.len() > 65000 {
+        error!(
+            "Giant model detected (model: {}, properties: {}, id: {})",
+            model.len(),
+            properties.len(),
+            lookup_table.get_by_hash(model[0][0])
+        );
+        dump_model_to_screen(&lookup_table, &model);
+    }
 
     insert_into(schema::properties::table)
         .values(&properties)

@@ -1,8 +1,13 @@
 use crate::db::schema::*;
+use diesel::sql_types::*;
 
-#[derive(Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable)]
+#[derive(
+    Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable, QueryableByName,
+)]
 pub struct Document {
+    #[sql_type = "Int8"]
     pub id: i64,
+    #[sql_type = "VarChar"]
     pub iri: String,
 }
 
