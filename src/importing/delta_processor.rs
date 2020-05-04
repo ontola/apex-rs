@@ -1,6 +1,10 @@
 use crate::hashtuple::{HashModel, Hashtuple, LookupTable};
 use crate::importing::events::DeltaProcessingTiming;
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::time::Instant;
+use url::Url;
 
 const LD_ADD: &str = "http://purl.org/linked-delta/add";
 const LD_REPLACE: &str = "http://purl.org/linked-delta/replace";
@@ -39,9 +43,14 @@ pub fn add_processor_methods_to_table(lookup_table: &mut LookupTable) {
     ReplaceProcessor::initialize(lookup_table);
 }
 
+struct ProcessedStatement {
+    document: u128,
+    hashtuple: Hashtuple,
+}
+
 /// FIXME: Be sure to call `add_processor_methods_to_table` on the `lookup_table` beforehand.
 pub fn apply_delta(
-    lookup_table: &LookupTable,
+    lookup_table: &mut LookupTable,
     current: &HashModel,
     delta: &HashModel,
 ) -> (HashModel, DeltaProcessingTiming) {
@@ -57,16 +66,43 @@ pub fn apply_delta(
     let setup_end = Instant::now();
     timing.setup_time = setup_end.duration_since(setup_start);
 
+    let mut docs: HashMap<u128, &mut Vec<&Hashtuple>> = HashMap::new();
+    delta.into_iter().for_each(|h| {
+        let mut graph = Url::parse(lookup_table.get_by_hash(h[5]))
+            .unwrap()
+            .query_pairs();
+        let doc = match graph.find(|(k, _)| k == Cow::Borrowed("graph")) {
+            Some((_, v)) => {
+                let graph_name = v.into_string();
+                lookup_table.ensure_value(&graph_name)
+            }
+            None => h[1],
+        };
+
+        if !docs.contains_key(&doc) {
+            docs.insert(doc, vec![h].as_mut());
+        } else {
+            docs.get(&doc).unwrap().push(h);
+        }
+        // TODO test if doc
+    });
+
     for statement in delta {
         let processor = processors.iter().find(|p| p.matches(*statement));
-        if processor.is_some() {
-            let (adds, replaces, removes) = processor
-                .expect("No processor for delta")
-                .process(current, &delta, *statement);
+        match processor {
+            Some(p) => {
+                let (adds, replaces, removes) = processor
+                    .expect("No processor for delta")
+                    .process(current, &delta, *statement);
 
-            addable.extend(adds);
-            replaceable.extend(replaces);
-            removable.extend(removes);
+                addable.extend(adds);
+                replaceable.extend(replaces);
+                removable.extend(removes);
+            }
+            None => panic!(
+                "No processor found for graph '{}'",
+                lookup_table.get_by_hash(statement[5])
+            ),
         }
     }
     let sort_end = Instant::now();

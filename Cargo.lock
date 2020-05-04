@@ -299,6 +299,7 @@ dependencies = [
  "serde_qs",
  "time 0.2.12",
  "tokio",
+ "url",
  "uuid 0.7.4",
 ]
 
