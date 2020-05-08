@@ -61,12 +61,12 @@ fn hash_to_hex(hashtuples: HashModel, lookup_table: &LookupTable) -> HexModel {
     let mut vec = Vec::with_capacity(hashtuples.len());
     for h in hashtuples {
         vec.push([
-            lookup_table.get_by_hash(h[0]),
-            lookup_table.get_by_hash(h[1]),
-            lookup_table.get_by_hash(h[2]),
-            lookup_table.get_by_hash(h[3]),
-            lookup_table.get_by_hash(h[4]),
-            lookup_table.get_by_hash(h[5]),
+            lookup_table.get_by_hash(h.subject),
+            lookup_table.get_by_hash(h.predicate),
+            lookup_table.get_by_hash(h.value),
+            lookup_table.get_by_hash(h.datatype),
+            lookup_table.get_by_hash(h.language),
+            lookup_table.get_by_hash(h.graph),
         ]);
     }
 

@@ -1,4 +1,4 @@
-use crate::hashtuple::{Hashtuple, LookupTable};
+use crate::hashtuple::{LookupTable, Statement};
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
@@ -16,8 +16,8 @@ const LANG_STRING_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langSt
 pub(crate) fn parse(
     lookup_table: &mut LookupTable,
     payload: &[u8],
-) -> HashMap<String, Vec<Hashtuple>> {
-    let mut docs: HashMap<String, Vec<Hashtuple>> = HashMap::new();
+) -> HashMap<String, Vec<Statement>> {
+    let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
 
     NQuadsParser::new(payload)
         .unwrap()
@@ -43,7 +43,7 @@ pub(crate) fn parse(
 
 fn create_hashtuple(
     lookup_table: &mut LookupTable,
-    map: &mut HashMap<String, Vec<Hashtuple>>,
+    map: &mut HashMap<String, Vec<Statement>>,
     subj: String,
     pred: String,
     obj: [String; 3],
@@ -63,14 +63,14 @@ fn create_hashtuple(
 
     map.entry(String::from(id)).or_insert_with(|| vec![]);
 
-    map.get_mut(id).unwrap().push([
+    map.get_mut(id).unwrap().push(Statement::new(
         lookup_table.ensure_value(&subj),
         lookup_table.ensure_value(&pred),
         lookup_table.ensure_value(&obj[0]),
         lookup_table.ensure_value(&obj[1]),
         lookup_table.ensure_value(&obj[2]),
         lookup_table.ensure_value(&delta_op.to_string()),
-    ]);
+    ));
 }
 
 fn str_from_iri_or_bn(t: &NamedOrBlankNode) -> String {

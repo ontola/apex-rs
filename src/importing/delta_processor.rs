@@ -1,4 +1,4 @@
-use crate::hashtuple::{HashModel, Hashtuple, LookupTable};
+use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::events::DeltaProcessingTiming;
 use std::time::Instant;
 
@@ -8,12 +8,12 @@ const LD_SUPPLANT: &str = "http://purl.org/linked-delta/supplant";
 const LL_SUPPLANT: &str = "http://purl.org/link-lib/supplant";
 
 pub trait DeltaProcessor<'a> {
-    fn matches(&self, statement: Hashtuple) -> bool;
+    fn matches(&self, statement: Statement) -> bool;
     fn process(
         &self,
         current: &HashModel,
         delta: &HashModel,
-        statement: Hashtuple,
+        statement: Statement,
     ) -> (HashModel, HashModel, HashModel);
 }
 
@@ -107,7 +107,10 @@ fn remove_all(cur: &HashModel, patch: &HashModel) -> HashModel {
 fn replace_matches(cur: &mut HashModel, patch: &HashModel) -> HashModel {
     let mut cleaned: HashModel = Vec::with_capacity(patch.len());
     for st in patch {
-        match cur.iter().find(|x| x[0] == st[0] && x[1] == st[1]) {
+        match cur
+            .iter()
+            .find(|x| x.subject == st.subject && x.predicate == st.predicate)
+        {
             Some(patch_value) => cleaned.push(*patch_value),
             None => cleaned.push(*st),
         }
@@ -121,32 +124,28 @@ fn add_all(cur: &mut HashModel, patch: &HashModel) {
         .into_iter()
         .filter(|h| !contains(&cur, h))
         .cloned()
-        .collect::<Vec<Hashtuple>>();
+        .collect::<Vec<Statement>>();
 
     cur.append(matches.as_mut());
 }
 
-fn contains(model: &HashModel, h: &Hashtuple) -> bool {
-    model.iter().any(|x| equals(x, h))
-}
-
-fn equals(a: &Hashtuple, b: &Hashtuple) -> bool {
-    a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3] && a[4] == b[4] && a[5] == b[5]
+fn contains(model: &HashModel, h: &Statement) -> bool {
+    model.iter().any(|x| x == h)
 }
 
 struct AddProcessor<'a> {
     lookup_table: &'a LookupTable,
 }
 impl<'a> DeltaProcessor<'a> for AddProcessor<'a> {
-    fn matches(&self, statement: Hashtuple) -> bool {
-        statement[5] == self.lookup_table.get_by_value(String::from(LD_ADD))
+    fn matches(&self, statement: Statement) -> bool {
+        statement.graph == self.lookup_table.get_by_value(String::from(LD_ADD))
     }
 
     fn process(
         &self,
         _: &HashModel,
         _: &HashModel,
-        st: Hashtuple,
+        st: Statement,
     ) -> (HashModel, HashModel, HashModel) {
         let adds = vec![st];
         let replaces = Vec::with_capacity(0);
@@ -166,8 +165,8 @@ struct ReplaceProcessor<'a> {
 }
 impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
     #[rustfmt::skip]
-    fn matches(&self, statement: Hashtuple) -> bool {
-        let graph = statement[5];
+    fn matches(&self, statement: Statement) -> bool {
+        let graph = statement.graph;
 
         graph == self.lookup_table.get_by_value(String::from(LD_REPLACE))
             || graph == self.lookup_table.get_by_value(String::from(LD_SUPPLANT))
@@ -178,7 +177,7 @@ impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
         &self,
         _: &HashModel,
         _: &HashModel,
-        st: Hashtuple,
+        st: Statement,
     ) -> (HashModel, HashModel, HashModel) {
         let replaces = vec![st];
 
@@ -223,12 +222,12 @@ mod tests {
         let comment0 = lookup_table.ensure_value(&String::from("Comment 0"));
         let comment1 = lookup_table.ensure_value(&String::from("Comment 1"));
 
-        let cur: HashModel = vec![[id, name, bob, string, empty, empty]];
+        let cur: HashModel = vec![Statement::new(id, name, bob, string, empty, empty)];
         let patch: HashModel = vec![
-            [id, name, bob_corrected, string, empty, replace],
-            [id, homepage, bobs_homepage, named_node, empty, replace],
-            [id, comment, comment0, string, empty, replace],
-            [id, comment, comment1, named_node, empty, replace],
+            Statement::new(id, name, bob_corrected, string, empty, replace),
+            Statement::new(id, homepage, bobs_homepage, named_node, empty, replace),
+            Statement::new(id, comment, comment0, string, empty, replace),
+            Statement::new(id, comment, comment1, named_node, empty, replace),
         ];
 
         let (out, _) = apply_delta(&mut lookup_table, &cur, &patch);
@@ -240,12 +239,12 @@ mod tests {
 
     #[test]
     fn test_add_all() {
-        let mut cur: HashModel = vec![[2u128, 0u128, 0u128, 0u128, 0u128, 0u128]];
+        let mut cur: HashModel = vec![Statement::new(2u128, 0u128, 0u128, 0u128, 0u128, 0u128)];
         let patch: HashModel = vec![
-            [0u128, 0u128, 0u128, 0u128, 0u128, 0u128],
-            [1u128, 0u128, 0u128, 0u128, 0u128, 0u128],
-            [2u128, 0u128, 0u128, 0u128, 0u128, 0u128],
-            [3u128, 0u128, 0u128, 0u128, 0u128, 0u128],
+            Statement::new(0u128, 0u128, 0u128, 0u128, 0u128, 0u128),
+            Statement::new(1u128, 0u128, 0u128, 0u128, 0u128, 0u128),
+            Statement::new(2u128, 0u128, 0u128, 0u128, 0u128, 0u128),
+            Statement::new(3u128, 0u128, 0u128, 0u128, 0u128, 0u128),
         ];
 
         add_all(&mut cur, &patch);

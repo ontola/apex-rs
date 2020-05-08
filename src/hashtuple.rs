@@ -1,14 +1,40 @@
 use bimap::{BiMap, Overwritten};
 use fasthash::murmur3;
 
-/// An RDF statement formatted into a tuple of six elements, each element contains the murmur3 hash
+/// An RDF statement composed of six elements, each element contains the murmur3 hash
 /// of the values string representation.
-///
-/// The order is as follows:
-/// [subject, predicate, object value, object, datatype, object language, graph]
-pub type Hashtuple = [u128; 6];
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
+pub struct Statement {
+    pub subject: u128,
+    pub predicate: u128,
+    pub value: u128,
+    pub datatype: u128,
+    pub language: u128,
+    pub graph: u128, // FIXME: PartialOrd, Ord, should this be top or bottom?
+}
 
-pub type HashModel = Vec<Hashtuple>;
+pub type HashModel = Vec<Statement>;
+
+impl Statement {
+    #[inline(always)]
+    pub fn new(
+        subject: u128,
+        predicate: u128,
+        value: u128,
+        datatype: u128,
+        language: u128,
+        graph: u128,
+    ) -> Statement {
+        Statement {
+            subject,
+            predicate,
+            value,
+            datatype,
+            language,
+            graph,
+        }
+    }
+}
 
 /// Mapping between hextuple string values and their hashed ids.
 pub struct LookupTable(pub BiMap<u128, String>);

@@ -21,21 +21,21 @@ pub(crate) fn insert_properties(
         error!(
             "Giant model detected (properties: {}, id: {})",
             model.len(),
-            lookup_table.get_by_hash(model[0][0])
+            lookup_table.get_by_hash(model[0].subject)
         );
         dump_model_to_screen(&lookup_table, &model);
     }
 
     for h in model {
         let resource_id = *resource_id_map
-            .get(lookup_table.get_by_hash(h[0]))
+            .get(lookup_table.get_by_hash(h.subject))
             .expect("Inserting property not inserted in resources");
 
-        let predicate = lookup_table.get_by_hash(h[1]);
+        let predicate = lookup_table.get_by_hash(h.predicate);
         if !ctx.property_map.contains_key(predicate) {
             insert_and_update(&ctx.get_conn(), &mut ctx.property_map, predicate);
         }
-        let datatype = lookup_table.get_by_hash(h[3]);
+        let datatype = lookup_table.get_by_hash(h.datatype);
         if !ctx.datatype_map.contains_key(datatype) {
             insert_and_update_datatype(&ctx.get_conn(), &mut ctx.datatype_map, datatype);
         }
@@ -46,13 +46,13 @@ pub(crate) fn insert_properties(
             dsl::resource_id.eq(resource_id),
             dsl::predicate_id.eq(pred_id),
             //            dsl::order.eq(None),
-            dsl::value.eq(lookup_table.get_by_hash(h[2])),
+            dsl::value.eq(lookup_table.get_by_hash(h.value)),
             dsl::datatype_id.eq(*(&mut ctx.datatype_map)
-                .get(lookup_table.get_by_hash(h[3]))
+                .get(lookup_table.get_by_hash(h.datatype))
                 .unwrap_or_else(|| {
                     panic!(
                         "Data type not found in map ({})",
-                        lookup_table.get_by_hash(h[3])
+                        lookup_table.get_by_hash(h.datatype)
                     )
                 })),
             //            dsl::language_id.eq(Some(0)),
@@ -64,7 +64,7 @@ pub(crate) fn insert_properties(
             "Giant model detected (model: {}, properties: {}, id: {})",
             model.len(),
             properties.len(),
-            lookup_table.get_by_hash(model[0][0])
+            lookup_table.get_by_hash(model[0].subject)
         );
         dump_model_to_screen(&lookup_table, &model);
     }
@@ -125,13 +125,13 @@ fn dump_model_to_screen(lookup_table: &LookupTable, model: &HashModel) {
 
     for hashtuple in model {
         output += format!(
-            "[{}, {}, {}, {}, {}, {}]\n",
-            lookup_table.get_by_hash(hashtuple[0]),
-            lookup_table.get_by_hash(hashtuple[1]),
-            lookup_table.get_by_hash(hashtuple[2]),
-            lookup_table.get_by_hash(hashtuple[3]),
-            lookup_table.get_by_hash(hashtuple[4]),
-            lookup_table.get_by_hash(hashtuple[5]),
+            "({}, {}, {}, {}, {}, {})\n",
+            lookup_table.get_by_hash(hashtuple.subject),
+            lookup_table.get_by_hash(hashtuple.predicate),
+            lookup_table.get_by_hash(hashtuple.value),
+            lookup_table.get_by_hash(hashtuple.datatype),
+            lookup_table.get_by_hash(hashtuple.language),
+            lookup_table.get_by_hash(hashtuple.graph),
         )
         .as_ref();
     }

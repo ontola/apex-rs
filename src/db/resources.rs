@@ -12,7 +12,7 @@ pub(crate) fn insert_resources(
 ) -> Vec<Resource> {
     let mut resource_iris = HashSet::new();
     for hex in model {
-        resource_iris.insert(hex[0]);
+        resource_iris.insert(hex.subject);
     }
     let mut new_resources = vec![];
     for r_iri in resource_iris {

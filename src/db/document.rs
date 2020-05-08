@@ -1,7 +1,7 @@
 use crate::db::db_context::DbContext;
 use crate::db::models::*;
 use crate::db::schema;
-use crate::hashtuple::{HashModel, LookupTable};
+use crate::hashtuple::{HashModel, LookupTable, Statement};
 use diesel::prelude::*;
 use diesel::query_builder::SqlQuery;
 
@@ -50,14 +50,14 @@ pub fn doc_by_id<'a>(
                 .find(|(_, v)| **v == p.datatype_id)
                 .unwrap()
                 .0;
-            props.push([
+            props.push(Statement::new(
                 lookup_table.ensure_value(&resource.iri),
                 lookup_table.ensure_value(predicate),
                 lookup_table.ensure_value(&p.value),
                 lookup_table.ensure_value(datatype),
                 lookup_table.ensure_value(&String::from(EMPTY_STRING)), // p.language.clone()
                 lookup_table.ensure_value(&String::from(EMPTY_STRING)),
-            ]);
+            ));
         }
     }
 
