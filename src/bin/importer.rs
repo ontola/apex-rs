@@ -1,4 +1,7 @@
 extern crate apex_rs;
+extern crate dotenv;
+#[macro_use]
+extern crate dotenv_codegen;
 
 use apex_rs::importing::events::MessageTiming;
 use apex_rs::importing::importer::import;

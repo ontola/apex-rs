@@ -4,6 +4,7 @@ use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::{r2d2, PgConnection};
 use std::collections::HashMap;
+use std::env;
 
 pub type IRIMapping = HashMap<String, i32>;
 
@@ -39,7 +40,7 @@ impl<'a> DbContext<'a> {
     }
 
     pub(crate) fn default_pool() -> DbPool {
-        DbContext::custom_pool(dotenv!("DATABASE_URL"))
+        DbContext::custom_pool(env::var("DATABASE_URL").unwrap().as_str())
     }
 }
 

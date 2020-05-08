@@ -1,7 +1,23 @@
 ### Getting started
-Ensure a `.env` is present with a `DATABASE_URL` pointing to postgres.
+1. Copy and fill `.env.template` to `.env`.
+3. When using SSL with postgres
+    2. Download and rename database SSL certificates to `certs` folder, see Dockerfile.
+    3. Change the cert permissions `chmod -R 700 certs`
+2. Run `cargo install diesel-cli` and run `diesel setup` to initialize the db schema.
 
-Run `diesel setup` to initialize the schema.
+
+Building the project manually
+- `cargo build`
+Building the project via docker
+- `DOCKER_BUILDKIT=1 docker build . -t apex-rs:latest`
+
+Running the project manually
+- `cargo run . --bin server`
+- `cargo run . --bin importer`
+
+Running the project via docker
+- `docker run -t apex-rs:latest /usr/local/bin/server` (default without arg)
+- `docker run -t apex-rs:latest /usr/local/bin/importer`
 
 ### osx
 For compiling

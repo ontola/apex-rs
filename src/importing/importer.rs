@@ -14,6 +14,7 @@ use rdkafka::error::KafkaResult;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::{ClientConfig, Message};
 use std::collections::HashMap;
+use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tokio::task;
@@ -22,9 +23,8 @@ pub async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
     let consumer = create_kafka_consumer().expect("Failed to create kafka consumer");
     println!("Initialized kafka config");
 
-    let topic = dotenv!("KAFKA_TOPIC");
     consumer
-        .subscribe(&[topic])
+        .subscribe(&[env::var("KAFKA_TOPIC").unwrap().as_str()])
         .expect("Subscribing to topic failed");
 
     //    get_doc_count(db_conn);
@@ -125,14 +125,23 @@ pub(crate) fn process_delta<'a>(
 
 fn create_kafka_consumer() -> KafkaResult<StreamConsumer> {
     let mut config = ClientConfig::new();
-    config.set("bootstrap.servers", dotenv!("KAFKA_ADDRESS"));
+    config.set(
+        "bootstrap.servers",
+        env::var("KAFKA_ADDRESS").unwrap().as_str(),
+    );
 
     config.set("sasl.mechanisms", "PLAIN");
     config.set("security.protocol", "SASL_SSL");
-    config.set("sasl.username", dotenv!("KAFKA_USERNAME"));
-    config.set("sasl.password", dotenv!("KAFKA_PASSWORD"));
+    config.set(
+        "sasl.username",
+        env::var("KAFKA_USERNAME").unwrap().as_str(),
+    );
+    config.set(
+        "sasl.password",
+        env::var("KAFKA_PASSWORD").unwrap().as_str(),
+    );
 
-    config.set("group.id", dotenv!("KAFKA_GROUP_ID"));
+    config.set("group.id", env::var("KAFKA_GROUP_ID").unwrap().as_str());
     // config.set("queue.buffering.max.ms", "0");
     //    config.set("allow.auto.create.topics", "false");
     config.set("fetch.max.bytes", "5428800");

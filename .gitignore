@@ -4,3 +4,4 @@
 .idea
 kafka.props
 heaptrack.*
+certs
