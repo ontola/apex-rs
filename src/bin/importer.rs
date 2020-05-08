@@ -12,8 +12,10 @@ use tokio::sync::mpsc::*;
 #[tokio::main]
 async fn main() {
     println!("Booting");
-    dotenv().ok();
-    println!("Initialized .env");
+    if cfg!(debug_assertions) {
+        dotenv().ok();
+        println!("Initialized .env");
+    }
 
     let (mut tx, mut rx) = channel::<MessageTiming>(100);
 
