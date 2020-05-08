@@ -2,7 +2,7 @@ use crate::db::db_context::DbContext;
 use crate::db::models::{Datatype, Predicate};
 use crate::db::schema;
 use crate::hashtuple::{HashModel, LookupTable};
-use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
+use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, Table};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -33,11 +33,17 @@ pub(crate) fn insert_properties(
 
         let predicate = lookup_table.get_by_hash(h.predicate);
         if !ctx.property_map.contains_key(predicate) {
-            insert_and_update(&ctx.get_conn(), &mut ctx.property_map, predicate);
+            insert_and_update_predicate(&ctx.get_conn(), &mut ctx.property_map, predicate);
         }
+
         let datatype = lookup_table.get_by_hash(h.datatype);
         if !ctx.datatype_map.contains_key(datatype) {
             insert_and_update_datatype(&ctx.get_conn(), &mut ctx.datatype_map, datatype);
+        }
+
+        let language = lookup_table.get_by_hash(h.language);
+        if !ctx.language_map.contains_key(language) {
+            insert_and_update_language(&ctx.get_conn(), &mut ctx.language_map, language);
         }
 
         let pred_id: i32 = *ctx.property_map.get_mut(predicate).unwrap();
@@ -55,18 +61,25 @@ pub(crate) fn insert_properties(
                         lookup_table.get_by_hash(h.datatype)
                     )
                 })),
-            //            dsl::language_id.eq(Some(0)),
+            dsl::language_id.eq(*(&mut ctx.language_map)
+                .get(lookup_table.get_by_hash(h.language))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Language not found in map ({})",
+                        lookup_table.get_by_hash(h.language)
+                    )
+                })),
             //            dsl::prop_resource.eq(None),
         ));
     }
     if properties.len() > 65000 {
+        dump_model_to_screen(&lookup_table, &model);
         error!(
             "Giant model detected (model: {}, properties: {}, id: {})",
             model.len(),
             properties.len(),
             lookup_table.get_by_hash(model[0].subject)
         );
-        dump_model_to_screen(&lookup_table, &model);
     }
 
     insert_into(schema::properties::table)
@@ -75,7 +88,7 @@ pub(crate) fn insert_properties(
         .expect("Error while inserting into resources");
 }
 
-fn insert_and_update(
+fn insert_and_update_predicate(
     db_conn: &PgConnection,
     map: &mut HashMap<String, i32>,
     insert_value: &str,
@@ -110,6 +123,28 @@ fn insert_and_update_datatype(
         .get_result::<Datatype>(db_conn)
         .unwrap_or_else(|_| {
             datatypes
+                .filter(&target)
+                .get_result(db_conn)
+                .unwrap_or_else(|_| panic!("Datatype not found {}", insert_value))
+        });
+    map.entry(p.value).or_insert(p.id);
+
+    p.id
+}
+
+fn insert_and_update_language(
+    db_conn: &PgConnection,
+    map: &mut HashMap<String, i32>,
+    insert_value: &str,
+) -> i32 {
+    use schema::languages::dsl::*;
+
+    let target = value.eq(insert_value);
+    let p = insert_into(languages)
+        .values(vec![(&target)])
+        .get_result::<Datatype>(db_conn)
+        .unwrap_or_else(|_| {
+            languages
                 .filter(&target)
                 .get_result(db_conn)
                 .unwrap_or_else(|_| panic!("Datatype not found {}", insert_value))

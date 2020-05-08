@@ -1,4 +1,4 @@
-use crate::db::models::{Datatype, Predicate};
+use crate::db::models::{Datatype, Language, Predicate};
 use crate::db::schema;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
@@ -12,6 +12,7 @@ pub struct DbContext<'a> {
     pub db_pool: &'a DbPool,
     pub property_map: IRIMapping,
     pub datatype_map: IRIMapping,
+    pub language_map: IRIMapping,
 }
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
@@ -28,6 +29,7 @@ impl<'a> DbContext<'a> {
             db_pool: &db_pool,
             property_map: get_predicates(&db_pool),
             datatype_map: get_datatypes(&db_pool),
+            language_map: get_languages(&db_pool),
         }
     }
 
@@ -42,6 +44,25 @@ impl<'a> DbContext<'a> {
     pub(crate) fn default_pool() -> DbPool {
         DbContext::custom_pool(env::var("DATABASE_URL").unwrap().as_str())
     }
+}
+
+/**
+ * Retrieve a map of predicate IRIs to their ids from the db.
+ */
+fn get_predicates(db_conn: &DbPool) -> IRIMapping {
+    use schema::predicates::dsl::*;
+
+    let mut map = HashMap::new();
+    let props = predicates
+        .limit(100_000)
+        .load::<Predicate>(&db_conn.get().unwrap())
+        .expect("Could not fetch properties");
+
+    for p in props {
+        map.entry(p.value.clone()).or_insert(p.id);
+    }
+
+    map
 }
 
 /**
@@ -64,16 +85,16 @@ fn get_datatypes(db_conn: &DbPool) -> IRIMapping {
 }
 
 /**
- * Retrieve a map of predicate IRIs to their ids from the db.
+ * Retrieve a map of language IRIs to their ids from the db.
  */
-fn get_predicates(db_conn: &DbPool) -> IRIMapping {
-    use schema::predicates::dsl::*;
+fn get_languages(db_conn: &DbPool) -> IRIMapping {
+    use schema::datatypes::dsl::*;
 
     let mut map = HashMap::new();
-    let props = predicates
+    let props = datatypes
         .limit(100_000)
-        .load::<Predicate>(&db_conn.get().unwrap())
-        .expect("Could not fetch properties");
+        .load::<Language>(&db_conn.get().unwrap())
+        .expect("Could not fetch languages");
 
     for p in props {
         map.entry(p.value.clone()).or_insert(p.id);
