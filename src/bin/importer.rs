@@ -1,8 +1,9 @@
 extern crate apex_rs;
 extern crate dotenv;
 #[macro_use]
-extern crate dotenv_codegen;
+extern crate log;
 
+use apex_rs::errors::ErrorKind;
 use apex_rs::importing::events::MessageTiming;
 use apex_rs::importing::importer::import;
 use apex_rs::reporting::reporter::report;
@@ -11,13 +12,14 @@ use tokio::sync::mpsc::*;
 
 #[tokio::main]
 async fn main() {
-    println!("Booting");
+    env_logger::init();
+    debug!(target: "app", "Booting");
     if cfg!(debug_assertions) {
         dotenv().ok();
-        println!("Initialized .env");
+        info!(target: "app", "Initialized .env");
     }
 
-    let (mut tx, mut rx) = channel::<MessageTiming>(100);
+    let (mut tx, mut rx) = channel::<Result<MessageTiming, ErrorKind>>(100);
 
-    tokio::try_join!(import(&mut tx), report(&mut rx));
+    tokio::try_join!(import(&mut tx), report(&mut rx)).unwrap();
 }

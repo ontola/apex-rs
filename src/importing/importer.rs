@@ -2,11 +2,13 @@ use crate::db::db_context::DbContext;
 use crate::db::document::reset_document;
 use crate::db::properties::insert_properties;
 use crate::db::resources::insert_resources;
+use crate::errors::ErrorKind;
 use crate::hashtuple::LookupTable;
 use crate::importing::delta_processor::{add_processor_methods_to_table, apply_delta};
 use crate::importing::events::{DeltaProcessingTiming, MessageTiming};
 use crate::importing::parsing::parse;
 use diesel::prelude::*;
+use diesel::result::Error::RollbackTransaction;
 use futures::StreamExt;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -19,7 +21,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tokio::task;
 
-pub async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
+pub async fn import(updates: &mut Sender<Result<MessageTiming, ErrorKind>>) -> Result<(), ()> {
     let consumer = create_kafka_consumer().expect("Failed to create kafka consumer");
     println!("Initialized kafka config");
 
@@ -38,23 +40,28 @@ pub async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
 
     while let Some(message) = stream.next().await {
         let msg_poll_time = Instant::now().duration_since(last_listen_time);
-        match message {
+
+        let t = match message {
             Err(e) => {
                 warn!("Kafka error: {}", e);
+                Err(ErrorKind::Unexpected)
             }
-            Ok(m) => {
-                let timing = process_message(&mut ctx, &m).await;
-                if let Err(e) = consumer.store_offset(&m) {
-                    warn!("Error while storing offset: {}", e);
+            Ok(m) => match process_message(&mut ctx, &m).await {
+                Ok(timing) => {
+                    if let Err(e) = consumer.store_offset(&m) {
+                        warn!("Error while storing offset: {}", e);
+                        Err(ErrorKind::Commit)
+                    } else {
+                        Ok(MessageTiming {
+                            poll_time: msg_poll_time,
+                            ..timing
+                        })
+                    }
                 }
-                updates
-                    .send(MessageTiming {
-                        poll_time: msg_poll_time,
-                        ..timing
-                    })
-                    .await;
-            }
-        }
+                Err(e) => Err(e),
+            },
+        };
+        updates.send(t).await;
         task::yield_now().await;
 
         last_listen_time = Instant::now();
@@ -63,31 +70,48 @@ pub async fn import(updates: &mut Sender<MessageTiming>) -> Result<(), ()> {
     Ok(())
 }
 
-async fn process_message<'a>(ctx: &mut DbContext<'a>, m: &BorrowedMessage<'a>) -> MessageTiming {
-    let mut timing: MessageTiming = MessageTiming::new();
+async fn process_message<'a>(
+    ctx: &mut DbContext<'a>,
+    m: &BorrowedMessage<'a>,
+) -> Result<MessageTiming, ErrorKind> {
+    let mut result: Result<MessageTiming, ErrorKind> = Err(ErrorKind::Unexpected);
 
     ctx.db_pool
         .get()
         .unwrap()
-        .transaction::<(), diesel::result::Error, _>(|| {
-            let payload = &m.payload().expect("message has no payload");
-            timing = process_delta(ctx, payload).expect("process_message failed");
-            Ok(())
-        })
-        .expect("Error while processing message");
+        .transaction::<(), diesel::result::Error, _>(|| match &m.payload() {
+            Some(payload) => match process_delta(ctx, payload) {
+                Ok(timing) => {
+                    result = Ok(timing);
 
-    timing
+                    Ok(())
+                }
+                Err(e) => {
+                    result = Err(e);
+                    Err(RollbackTransaction)
+                }
+            },
+            None => {
+                error!(target: "app", "message has no payload");
+                result = Err(ErrorKind::EmptyDelta);
+
+                Err(RollbackTransaction)
+            }
+        });
+
+    result
 }
 
 pub(crate) fn process_delta<'a>(
     ctx: &mut DbContext<'a>,
     payload: &[u8],
-) -> Result<MessageTiming, ()> {
+) -> Result<MessageTiming, ErrorKind> {
     let parse_start = Instant::now();
 
     let mut lookup_table: LookupTable = LookupTable::new();
     add_processor_methods_to_table(&mut lookup_table);
-    let docs = parse(&mut lookup_table, payload);
+    let docs = parse(&mut lookup_table, payload)?;
+
     let parse_time = Instant::now().duration_since(parse_start);
     let mut fetch_time = Duration::new(0, 0);
     let mut delta_time = DeltaProcessingTiming::new();

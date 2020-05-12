@@ -1,8 +1,10 @@
+use crate::errors::ErrorKind;
 use crate::hashtuple::{LookupTable, Statement};
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
 use std::collections::HashMap;
+use std::io;
 
 const EMPTY: &str = "";
 const BLANK_NODE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#blankNode";
@@ -16,18 +18,30 @@ const LANG_STRING_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langSt
 pub(crate) fn parse(
     lookup_table: &mut LookupTable,
     payload: &[u8],
-) -> Result<HashMap<String, Vec<Statement>>, ()> {
+) -> Result<HashMap<String, Vec<Statement>>, ErrorKind> {
     let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
 
     match NQuadsParser::new(payload) {
-        Err(e) => Err(()),
+        Err(e) => Err(ErrorKind::ParserError(e.to_string())),
         Ok(mut model) => {
-            model.parse_all(&mut |q| {
+            // The parse_all method forces TurtleError, so we're circumventing that here.
+            let mut real_error = None;
+            let result = model.parse_all(&mut |q| -> Result<(), TurtleError> {
                 let subj = str_from_iri_or_bn(&q.subject);
                 let pred = String::from(q.predicate.iri);
-                let graph = str_from_iri_or_bn(&q.graph_name.unwrap());
+                let graph = match q.graph_name {
+                    Some(g) => str_from_iri_or_bn(&g),
+                    None => {
+                        real_error = Some(ErrorKind::DeltaWithoutOperator);
 
-                create_hashtuple(
+                        return Err(TurtleError::from(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Unexpected error",
+                        )));
+                    }
+                };
+
+                let res = create_hashtuple(
                     lookup_table,
                     &mut docs,
                     subj,
@@ -36,10 +50,22 @@ pub(crate) fn parse(
                     graph,
                 );
 
-                Ok(()) as Result<(), TurtleError>
+                match res {
+                    Err(e) => {
+                        real_error = Some(e);
+                        Err(TurtleError::from(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Unexpected error",
+                        )))
+                    }
+                    Ok(_) => Ok(()),
+                }
             });
 
-            Ok(docs)
+            match result {
+                Ok(_) => Ok(docs),
+                Err(_) => Err(real_error.unwrap()),
+            }
         }
     }
 }
@@ -51,18 +77,28 @@ fn create_hashtuple(
     pred: String,
     obj: [String; 3],
     graph: String,
-) -> Result<(), &'static str> {
+) -> Result<(), ErrorKind> {
     let split_graph: Vec<&str> = graph.split("?graph=").collect();
-    let delta_op = split_graph.first().unwrap();
+    let delta_op = match split_graph.first() {
+        Some(delta_op) => delta_op,
+        None => {
+            error!(target: "app", "Quad doesn't contain graph");
+            return Err(ErrorKind::OperatorWithoutGraphName);
+        }
+    };
+
     if split_graph.len() < 2 {
-        error!(target: "app", "Quad doesn't contain graph");
-        return Err("Quad doesn't contain graph");
+        error!(target: "app", "Graph is empty");
+        return Err(ErrorKind::OperatorWithoutGraphName);
     }
 
     let last = split_graph.last().unwrap().split('/').last();
 
     match last {
-        None => Err("Graph not properly formatted"),
+        None => {
+            error!(target: "app", "Operator not properly formatted");
+            Err(ErrorKind::DeltaWithoutOperator)
+        }
         Some(id) => {
             map.entry(String::from(id)).or_insert_with(|| vec![]);
 
