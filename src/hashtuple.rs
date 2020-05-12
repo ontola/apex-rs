@@ -1,6 +1,10 @@
 use bimap::{BiMap, Overwritten};
 use fasthash::murmur3;
 
+pub(crate) const BLANK_NODE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#blankNode";
+pub(crate) const NAMED_NODE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#namedNode";
+pub(crate) const LANG_STRING_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
+
 /// An RDF statement composed of six elements, each element contains the murmur3 hash
 /// of the values string representation.
 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
@@ -40,7 +44,7 @@ impl Statement {
 pub struct LookupTable(pub BiMap<u128, String>);
 
 impl LookupTable {
-    pub fn new() -> LookupTable {
+    pub fn default() -> LookupTable {
         LookupTable { 0: BiMap::new() }
     }
 

@@ -108,7 +108,7 @@ pub(crate) fn process_delta<'a>(
 ) -> Result<MessageTiming, ErrorKind> {
     let parse_start = Instant::now();
 
-    let mut lookup_table: LookupTable = LookupTable::new();
+    let mut lookup_table: LookupTable = LookupTable::default();
     add_processor_methods_to_table(&mut lookup_table);
     let docs = parse(&mut lookup_table, payload)?;
 

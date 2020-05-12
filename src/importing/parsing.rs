@@ -1,5 +1,5 @@
 use crate::errors::ErrorKind;
-use crate::hashtuple::{LookupTable, Statement};
+use crate::hashtuple::{LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI};
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
@@ -7,10 +7,7 @@ use std::collections::HashMap;
 use std::io;
 
 const EMPTY: &str = "";
-const BLANK_NODE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#blankNode";
-const NAMED_NODE_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#namedNode";
 const STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
-const LANG_STRING_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
 
 /**
  * Parse an n-quads formatted string into a map of resources and hextuples.

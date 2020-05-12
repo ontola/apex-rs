@@ -1,8 +1,8 @@
 use crate::db::db_context::{DbContext, DbPool};
 use crate::db::document::doc_by_id;
 use crate::hashtuple::{HashModel, LookupTable};
-use crate::serving::serialization::{bulk_result_to_response, BulkInput};
-use actix_web::{post, web, Responder};
+use crate::serving::serialization::{bulk_result_to_hextuples, BulkInput};
+use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
 use serde_derive::Deserialize;
 
@@ -23,7 +23,7 @@ pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload)
     println!("body: {}", body);
 
     let pl = pool.into_inner();
-    let mut lookup_table = LookupTable::new();
+    let mut lookup_table = LookupTable::default();
 
     let resources = serde_qs::from_str::<FormData>(
         &body
@@ -36,7 +36,7 @@ pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload)
     .map(|c| c.to_string())
     .collect::<Vec<String>>();
 
-    let random_doc = web::block(move || {
+    let bulk_docs = web::block(move || -> Result<BulkInput, i32> {
         let ctx = DbContext::new(&pl);
         let models: Vec<Option<HashModel>> = resources
             .iter()
@@ -48,5 +48,9 @@ pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload)
     })
     .await;
 
-    bulk_result_to_response(random_doc)
+    if bulk_docs.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+
+    HttpResponse::Ok().body(bulk_result_to_hextuples(bulk_docs.unwrap()))
 }
