@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
+const MAX_PROPERTY_INSERT_SIZE: usize = 60_000 / 8;
+
 pub(crate) fn insert_properties(
     ctx: &mut DbContext,
     lookup_table: &LookupTable,
@@ -72,20 +74,15 @@ pub(crate) fn insert_properties(
             //            dsl::prop_resource.eq(None),
         ));
     }
-    if properties.len() > 65000 {
-        dump_model_to_screen(&lookup_table, &model);
-        error!(
-            "Giant model detected (model: {}, properties: {}, id: {})",
-            model.len(),
-            properties.len(),
-            lookup_table.get_by_hash(model[0].subject)
-        );
-    }
 
-    insert_into(schema::properties::table)
-        .values(&properties)
-        .execute(&ctx.get_conn())
-        .expect("Error while inserting into resources");
+    properties
+        .chunks(MAX_PROPERTY_INSERT_SIZE)
+        .for_each(|chunk| {
+            insert_into(schema::properties::table)
+                .values(chunk)
+                .execute(&ctx.get_conn())
+                .expect("Error while inserting into resources");
+        });
 }
 
 fn insert_and_update_predicate(
