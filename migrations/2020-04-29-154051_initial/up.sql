@@ -1,14 +1,12 @@
--- Your SQL goes here
-
 CREATE TABLE documents
 (
     id BIGSERIAL PRIMARY KEY,
     iri character varying(2000) NOT NULL,
     CONSTRAINT documents_id_unique UNIQUE (id)
-)
-WITH (
-    OIDS = FALSE
 );
+
+-- ALTER TABLE public.documents
+--     OWNER to postgres;
 
 CREATE INDEX id_index
     ON documents USING hash
@@ -24,10 +22,10 @@ CREATE TABLE resources
         REFERENCES documents (id) MATCH SIMPLE
         ON UPDATE RESTRICT
         ON DELETE CASCADE
-)
-WITH (
-    OIDS = FALSE
 );
+
+-- ALTER TABLE public.resources
+--     OWNER to postgres;
 
 CREATE INDEX resources_document_id
     ON resources USING btree
@@ -39,10 +37,10 @@ CREATE TABLE datatypes
     id SERIAL PRIMARY KEY,
     value character varying(1024) NOT NULL,
     CONSTRAINT datatypes_value_uniq UNIQUE (value)
-)
-WITH (
-    OIDS = FALSE
 );
+
+-- ALTER TABLE public.datatypes
+--     OWNER to postgres;
 
 
 CREATE TABLE predicates
@@ -50,40 +48,55 @@ CREATE TABLE predicates
     id SERIAL PRIMARY KEY,
     value character varying(2048) NOT NULL,
     CONSTRAINT predicates_value_uniq UNIQUE (value)
-)
-WITH (
-    OIDS = FALSE
 );
+
+-- ALTER TABLE public.predicates
+--     OWNER to postgres;
 
 
 CREATE TABLE languages
 (
     id SERIAL PRIMARY KEY,
     value character varying(255) NOT NULL
-)
-WITH (
-    OIDS = FALSE
 );
 
+-- ALTER TABLE public.languages
+--     OWNER to postgres;
 
-CREATE TABLE properties
+
+CREATE TABLE public.properties
 (
-    id BIGSERIAL PRIMARY KEY,
-    resource_id BIGINT,
+    id bigserial NOT NULL,
+    resource_id bigint NOT NULL,
     predicate_id integer NOT NULL,
-    "order" integer DEFAULT 0,
-    prop_resource BIGINT,
+    "order" integer NOT NULL DEFAULT 0,
+    prop_resource bigint,
     datatype_id integer NOT NULL,
-    language_id integer,
-    value character varying(10000000) NOT NULL,
-    CONSTRAINT fk_properties_resource_id_id FOREIGN KEY (resource_id)
-        REFERENCES resources (id) MATCH SIMPLE
+    language_id integer NOT NULL,
+    value text NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT properties_datatype_id FOREIGN KEY (datatype_id)
+        REFERENCES public.datatypes (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+        DEFERRABLE INITIALLY DEFERRED
+        NOT VALID,
+    CONSTRAINT properties_language_id FOREIGN KEY (language_id)
+        REFERENCES public.languages (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+        DEFERRABLE INITIALLY DEFERRED
+        NOT VALID,
+    CONSTRAINT properties_resource_id FOREIGN KEY (resource_id)
+        REFERENCES public.resources (id) MATCH SIMPLE
         ON UPDATE RESTRICT
         ON DELETE CASCADE
-)
-WITH (
-    OIDS = FALSE
+        DEFERRABLE INITIALLY DEFERRED
+        NOT VALID
 );
+
+-- ALTER TABLE public.properties
+--     OWNER to postgres;
 
 CREATE INDEX properties_pred_dt_resource
     ON properties USING btree
