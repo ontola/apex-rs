@@ -8,6 +8,7 @@ use crate::serving::serialization::{
 use actix_web::http::{header, HeaderMap};
 use actix_web::{get, web, HttpResponse, Responder};
 use std::str::FromStr;
+use std::sync::Arc;
 
 #[get("/random")]
 pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Responder {
@@ -31,19 +32,37 @@ pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Respond
     HttpResponse::Ok().body(hash_model_to_hextuples(random_doc.unwrap()))
 }
 
+#[get("/{id}.{ext}")]
+pub(crate) async fn show_resource_ext<'a>(
+    pool: web::Data<DbPool>,
+    info: web::Path<(i32, String)>,
+) -> HttpResponse {
+    if let Ok(response_type) = ResponseType::from_ext(&info.1) {
+        let id = info.0;
+        let pl = pool.into_inner();
+        show(pl, id, response_type).await
+    } else {
+        HttpResponse::NotAcceptable().finish()
+    }
+}
+
 #[get("/{id}")]
-#[allow(clippy::borrow_interior_mutable_const)]
 pub(crate) async fn show_resource<'a>(
     req: actix_web::HttpRequest,
     pool: web::Data<DbPool>,
     info: web::Path<(i32,)>,
 ) -> HttpResponse {
-    let response_type = match negotiate(req.headers()) {
+    let response_type = match negotiate(req.headers(), &None) {
         Some(s) => s,
         None => return HttpResponse::NotAcceptable().finish(),
     };
     let id = info.0;
     let pl = pool.into_inner();
+    show(pl, id, response_type).await
+}
+
+#[allow(clippy::borrow_interior_mutable_const)]
+async fn show(pl: Arc<DbPool>, id: i32, response_type: ResponseType) -> HttpResponse {
     let mut lookup_table = LookupTable::default();
 
     let doc = web::block(move || {
@@ -72,11 +91,25 @@ pub(crate) async fn show_resource<'a>(
             header::CacheDirective::Public,
         ]))
         .set_header(header::CONTENT_TYPE, response_type.to_string())
-        .set_header(header::VARY, header::CONTENT_TYPE.to_string())
+        .set_header(
+            "Content-Disposition",
+            format!("inline; filename={}.{}", id, response_type.to_ext()),
+        )
+        .set_header(header::VARY, "Accept, Accept-Encoding, Origin")
         .body(serialization)
 }
 
-fn negotiate(headers: &HeaderMap) -> Option<ResponseType> {
+fn negotiate(headers: &HeaderMap, ext: &Option<String>) -> Option<ResponseType> {
+    if ext.is_some() {
+        let extention = ext.as_ref().unwrap();
+
+        return if let Ok(response_type) = ResponseType::from_ext(extention) {
+            Some(response_type)
+        } else {
+            None
+        };
+    }
+
     match headers.get(header::ACCEPT) {
         None => None,
         Some(h) => match h.to_str() {
