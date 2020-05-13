@@ -92,7 +92,7 @@ async fn process_message<'a>(
                 }
             },
             None => {
-                error!(target: "app", "message has no payload");
+                error!(target: "apex", "message has no payload");
                 result = Err(ErrorKind::EmptyDelta);
 
                 Err(RollbackTransaction)

@@ -13,10 +13,10 @@ use tokio::sync::mpsc::*;
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    debug!(target: "app", "Booting");
+    debug!(target: "apex", "Booting");
     if cfg!(debug_assertions) {
         dotenv().ok();
-        info!(target: "app", "Initialized .env");
+        info!(target: "apex", "Initialized .env");
     }
 
     let (mut tx, mut rx) = channel::<Result<MessageTiming, ErrorKind>>(100);

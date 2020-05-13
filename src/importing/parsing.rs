@@ -79,13 +79,13 @@ fn create_hashtuple(
     let delta_op = match split_graph.first() {
         Some(delta_op) => delta_op,
         None => {
-            error!(target: "app", "Quad doesn't contain graph");
+            error!(target: "apex", "Quad doesn't contain graph");
             return Err(ErrorKind::OperatorWithoutGraphName);
         }
     };
 
     if split_graph.len() < 2 {
-        error!(target: "app", "Graph is empty");
+        error!(target: "apex", "Graph is empty");
         return Err(ErrorKind::OperatorWithoutGraphName);
     }
 
@@ -93,7 +93,7 @@ fn create_hashtuple(
 
     match last {
         None => {
-            error!(target: "app", "Operator not properly formatted");
+            error!(target: "apex", "Operator not properly formatted");
             Err(ErrorKind::DeltaWithoutOperator)
         }
         Some(id) => {
