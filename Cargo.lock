@@ -290,6 +290,7 @@ dependencies = [
  "futures-util",
  "humantime 2.0.0",
  "log",
+ "percent-encoding 2.1.0",
  "rdkafka",
  "rio_api",
  "rio_turtle",

@@ -4,6 +4,7 @@ use crate::hashtuple::{HashModel, LookupTable};
 use crate::serving::serialization::{bulk_result_to_hextuples, BulkInput};
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use percent_encoding::percent_decode_str;
 use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
@@ -40,7 +41,16 @@ pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload)
         let ctx = DbContext::new(&pl);
         let models: Vec<Option<HashModel>> = resources
             .iter()
-            .map(|r| r.split('/').last().unwrap().parse::<i64>().unwrap())
+            .map(|r| {
+                percent_decode_str(r)
+                    .decode_utf8()
+                    .unwrap()
+                    .split('/')
+                    .last()
+                    .unwrap()
+                    .parse::<i64>()
+                    .unwrap()
+            })
             .map(|id| doc_by_id(&ctx, &mut lookup_table, id))
             .collect();
 
