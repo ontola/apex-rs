@@ -48,7 +48,7 @@ impl LookupTable {
         LookupTable { 0: BiMap::new() }
     }
 
-    pub fn ensure_value(&mut self, value: &String) -> u128 {
+    pub fn ensure_value(&mut self, value: &str) -> u128 {
         let id = murmur3::hash128(&value);
         let update = self.0.insert(id, value.to_string());
         match update {

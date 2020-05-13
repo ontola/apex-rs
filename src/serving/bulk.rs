@@ -1,6 +1,6 @@
 use crate::db::db_context::{DbContext, DbPool};
 use crate::db::document::doc_by_id;
-use crate::hashtuple::{HashModel, LookupTable};
+use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::serving::response_type::{ResponseType, NQUADS_MIME, NTRIPLES_MIME};
 use crate::serving::responses::set_default_headers;
 use crate::serving::serialization::{
@@ -60,7 +60,15 @@ pub(crate) async fn bulk<'a>(
                     .parse::<i64>()
                     .unwrap()
             })
-            .map(|id| doc_by_id(&ctx, &mut lookup_table, id))
+            .map(|id| {
+                if let Some(mut doc) = doc_by_id(&ctx, &mut lookup_table, id) {
+                    doc.push(status_code_statement(&mut lookup_table, id, 200));
+
+                    Some(doc)
+                } else {
+                    Some(vec![status_code_statement(&mut lookup_table, id, 404)])
+                }
+            })
             .collect();
 
         Ok((models, lookup_table))
@@ -97,4 +105,16 @@ pub(crate) async fn bulk<'a>(
     };
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
+}
+
+fn status_code_statement(lookup_table: &mut LookupTable, id: i64, status: i16) -> Statement {
+    Statement {
+        subject: lookup_table
+            .ensure_value(format!("https://id.openraadsinformatie.nl/{}", id).as_str()),
+        predicate: lookup_table.ensure_value("http://www.w3.org/2011/http#statusCode"),
+        value: lookup_table.ensure_value(status.to_string().as_str()),
+        datatype: lookup_table.ensure_value("http://www.w3.org/2001/XMLSchema#integer"),
+        language: lookup_table.ensure_value(""),
+        graph: lookup_table.ensure_value("http://purl.org/link-lib/meta"),
+    }
 }
