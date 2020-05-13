@@ -1,5 +1,6 @@
 mod bulk;
 mod response_type;
+mod responses;
 mod serialization;
 mod server;
 mod show_resource;

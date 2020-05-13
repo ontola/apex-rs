@@ -2,6 +2,7 @@ use crate::db::db_context::{DbContext, DbPool};
 use crate::db::document::{doc_by_id, random_doc};
 use crate::hashtuple::LookupTable;
 use crate::serving::response_type::ResponseType;
+use crate::serving::responses::set_default_headers;
 use crate::serving::serialization::{
     hash_model_to_hextuples, hash_model_to_ntriples, hash_model_to_turtle,
 };
@@ -29,7 +30,8 @@ pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Respond
         return HttpResponse::NotFound().finish();
     }
 
-    HttpResponse::Ok().body(hash_model_to_hextuples(random_doc.unwrap()))
+    let doc = random_doc.unwrap();
+    HttpResponse::Ok().body(hash_model_to_hextuples((doc.0, &doc.1)))
 }
 
 #[get("/{id}.{ext}")]
@@ -79,23 +81,22 @@ async fn show(pl: Arc<DbPool>, id: i32, response_type: ResponseType) -> HttpResp
         return HttpResponse::NotFound().finish();
     }
 
+    let doc = doc.unwrap();
     let serialization = match response_type {
-        ResponseType::HEXTUPLE => hash_model_to_hextuples(doc.unwrap()),
-        ResponseType::NTRIPLES | ResponseType::NQUADS => hash_model_to_ntriples(doc.unwrap()),
-        ResponseType::TURTLE => hash_model_to_turtle(doc.unwrap()),
+        ResponseType::HEXTUPLE => hash_model_to_hextuples((doc.0, &doc.1)),
+        ResponseType::NTRIPLES | ResponseType::NQUADS => hash_model_to_ntriples((doc.0, &doc.1)),
+        ResponseType::TURTLE => hash_model_to_turtle((doc.0, &doc.1)),
     };
 
-    HttpResponse::Ok()
+    set_default_headers(&mut HttpResponse::Ok(), &response_type)
         .set(header::CacheControl(vec![
             header::CacheDirective::MaxAge(86400u32),
             header::CacheDirective::Public,
         ]))
-        .set_header(header::CONTENT_TYPE, response_type.to_string())
         .set_header(
             "Content-Disposition",
             format!("inline; filename={}.{}", id, response_type.to_ext()),
         )
-        .set_header(header::VARY, "Accept, Accept-Encoding, Origin")
         .body(serialization)
 }
 

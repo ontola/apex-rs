@@ -1,16 +1,16 @@
 use std::str::FromStr;
 
-const HEXTUPLE_MIME: &str = "application/hex+x-ndjson; charset=utf-8";
-const HEXTUPLE_EXT: &str = "hdnjson";
+pub(crate) const HEXTUPLE_MIME: &str = "application/hex+x-ndjson; charset=utf-8";
+pub(crate) const HEXTUPLE_EXT: &str = "hdnjson";
 
-const NQUADS_MIME: &str = "application/n-quads";
-const NQUADS_EXT: &str = "nq";
+pub(crate) const NQUADS_MIME: &str = "application/n-quads";
+pub(crate) const NQUADS_EXT: &str = "nq";
 
-const NTRIPLES_MIME: &str = "application/n-triples";
-const NTRIPLES_EXT: &str = "nt";
+pub(crate) const NTRIPLES_MIME: &str = "application/n-triples";
+pub(crate) const NTRIPLES_EXT: &str = "nt";
 
-const TURTLE_MIME: &str = "text/turtle";
-const TURTLE_EXT: &str = "ttl";
+pub(crate) const TURTLE_MIME: &str = "text/turtle";
+pub(crate) const TURTLE_EXT: &str = "ttl";
 
 pub enum ResponseType {
     HEXTUPLE,

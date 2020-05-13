@@ -1,7 +1,12 @@
 use crate::db::db_context::{DbContext, DbPool};
 use crate::db::document::doc_by_id;
 use crate::hashtuple::{HashModel, LookupTable};
-use crate::serving::serialization::{bulk_result_to_hextuples, BulkInput};
+use crate::serving::response_type::{ResponseType, NQUADS_MIME, NTRIPLES_MIME};
+use crate::serving::responses::set_default_headers;
+use crate::serving::serialization::{
+    bulk_result_to_hextuples, bulk_result_to_nquads, bulk_result_to_ntriples, BulkInput,
+};
+use actix_web::http::header;
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
 use percent_encoding::percent_decode_str;
@@ -13,7 +18,11 @@ pub(crate) struct FormData {
 }
 
 #[post("/link-lib/bulk")]
-pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload) -> impl Responder {
+pub(crate) async fn bulk<'a>(
+    req: actix_web::HttpRequest,
+    pool: web::Data<DbPool>,
+    mut payload: web::Payload,
+) -> impl Responder {
     let mut bytes = web::BytesMut::new();
     while let Some(item) = payload.next().await {
         bytes.extend_from_slice(&item.unwrap());
@@ -62,5 +71,30 @@ pub(crate) async fn bulk<'a>(pool: web::Data<DbPool>, mut payload: web::Payload)
         return HttpResponse::InternalServerError().finish();
     }
 
-    HttpResponse::Ok().body(bulk_result_to_hextuples(bulk_docs.unwrap()))
+    let (body, response_type) = if let Some(accept) = req.headers().get(header::ACCEPT) {
+        let accept = accept.to_str().unwrap();
+        if accept == NQUADS_MIME {
+            (
+                bulk_result_to_nquads(bulk_docs.unwrap()),
+                ResponseType::NQUADS,
+            )
+        } else if accept == NTRIPLES_MIME {
+            (
+                bulk_result_to_ntriples(bulk_docs.unwrap()),
+                ResponseType::NTRIPLES,
+            )
+        } else {
+            (
+                bulk_result_to_hextuples(bulk_docs.unwrap()),
+                ResponseType::HEXTUPLE,
+            )
+        }
+    } else {
+        (
+            bulk_result_to_hextuples(bulk_docs.unwrap()),
+            ResponseType::HEXTUPLE,
+        )
+    };
+
+    set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
 }
