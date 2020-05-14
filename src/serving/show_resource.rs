@@ -1,5 +1,5 @@
 use crate::db::db_context::{DbContext, DbPool};
-use crate::db::document::{doc_by_id, random_doc};
+use crate::db::document::{doc_by_iri, random_doc};
 use crate::hashtuple::LookupTable;
 use crate::serving::response_type::ResponseType;
 use crate::serving::responses::set_default_headers;
@@ -20,7 +20,7 @@ pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Respond
         let ctx = DbContext::new(&pl);
 
         match random_doc(&ctx, &mut lookup_table) {
-            Some(model) => Ok((model, lookup_table)),
+            Some((_, model)) => Ok((model, lookup_table)),
             None => Err(404),
         }
     })
@@ -36,13 +36,18 @@ pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Respond
 
 #[get("/{id}.{ext}")]
 pub(crate) async fn show_resource_ext<'a>(
+    req: actix_web::HttpRequest,
     pool: web::Data<DbPool>,
-    info: web::Path<(i32, String)>,
+    info: web::Path<(String, String)>,
 ) -> HttpResponse {
     if let Ok(response_type) = ResponseType::from_ext(&info.1) {
-        let id = info.0;
+        let path = &info.0;
         let pl = pool.into_inner();
-        show(pl, id, response_type).await
+
+        match iri_from_request(req, &path) {
+            Some(iri) => show(pl, &iri, response_type).await,
+            None => HttpResponse::BadRequest().finish(),
+        }
     } else {
         HttpResponse::NotAcceptable().finish()
     }
@@ -52,26 +57,31 @@ pub(crate) async fn show_resource_ext<'a>(
 pub(crate) async fn show_resource<'a>(
     req: actix_web::HttpRequest,
     pool: web::Data<DbPool>,
-    info: web::Path<(i32,)>,
+    info: web::Path<(String,)>,
 ) -> HttpResponse {
     let response_type = match negotiate(req.headers(), &None) {
         Some(s) => s,
         None => return HttpResponse::NotAcceptable().finish(),
     };
-    let id = info.0;
+    let path = &info.0;
     let pl = pool.into_inner();
-    show(pl, id, response_type).await
+
+    match iri_from_request(req, &path) {
+        Some(iri) => show(pl, &iri, response_type).await,
+        None => HttpResponse::BadRequest().finish(),
+    }
 }
 
 #[allow(clippy::borrow_interior_mutable_const)]
-async fn show(pl: Arc<DbPool>, id: i32, response_type: ResponseType) -> HttpResponse {
+async fn show<'a>(pl: Arc<DbPool>, iri: &str, response_type: ResponseType) -> HttpResponse {
     let mut lookup_table = LookupTable::default();
+    let iri_move = String::from(iri);
 
     let doc = web::block(move || {
         let ctx = DbContext::new(&pl);
 
-        match doc_by_id(&ctx, &mut lookup_table, id as i64) {
-            Some(model) => Ok((model, lookup_table)),
+        match doc_by_iri(&ctx, &mut lookup_table, &iri_move) {
+            Some((_, model)) => Ok((model, lookup_table)),
             None => Err(404),
         }
     })
@@ -81,11 +91,13 @@ async fn show(pl: Arc<DbPool>, id: i32, response_type: ResponseType) -> HttpResp
         return HttpResponse::NotFound().finish();
     }
 
-    let doc = doc.unwrap();
+    let (model, lookup_table) = doc.unwrap();
     let serialization = match response_type {
-        ResponseType::HEXTUPLE => hash_model_to_hextuples((doc.0, &doc.1)),
-        ResponseType::NTRIPLES | ResponseType::NQUADS => hash_model_to_ntriples((doc.0, &doc.1)),
-        ResponseType::TURTLE => hash_model_to_turtle((doc.0, &doc.1)),
+        ResponseType::HEXTUPLE => hash_model_to_hextuples((model, &lookup_table)),
+        ResponseType::NTRIPLES | ResponseType::NQUADS => {
+            hash_model_to_ntriples((model, &lookup_table))
+        }
+        ResponseType::TURTLE => hash_model_to_turtle((model, &lookup_table)),
     };
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type)
@@ -95,9 +107,33 @@ async fn show(pl: Arc<DbPool>, id: i32, response_type: ResponseType) -> HttpResp
         ]))
         .set_header(
             "Content-Disposition",
-            format!("inline; filename={}.{}", id, response_type.to_ext()),
+            format!("inline; filename={}", iri_to_filename(&iri, &response_type)),
         )
         .body(serialization)
+}
+
+fn iri_from_request(req: actix_web::HttpRequest, path: &str) -> Option<String> {
+    let host = match req.headers().get("Host") {
+        Some(v) => match v.to_str() {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        },
+        None => None,
+    };
+
+    if host.is_none() {
+        return None;
+    }
+
+    Some(format!("https://{}/{}", host.unwrap(), path))
+}
+
+fn iri_to_filename(iri: &str, response_type: &ResponseType) -> String {
+    format!(
+        "{}.{}",
+        iri.split('/').last().unwrap(),
+        response_type.to_ext()
+    )
 }
 
 fn negotiate(headers: &HeaderMap, ext: &Option<String>) -> Option<ResponseType> {

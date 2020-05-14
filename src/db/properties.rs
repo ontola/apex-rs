@@ -2,7 +2,7 @@ use crate::db::db_context::DbContext;
 use crate::db::models::{Datatype, Predicate};
 use crate::db::schema;
 use crate::hashtuple::{HashModel, LookupTable};
-use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, Table};
+use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;

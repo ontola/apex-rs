@@ -11,6 +11,12 @@ pub struct Document {
     pub iri: String,
 }
 
+#[derive(Eq, PartialEq, Debug, Associations, Insertable)]
+#[table_name = "documents"]
+pub struct NewDocument {
+    pub iri: String,
+}
+
 #[derive(Eq, PartialEq, Debug, Queryable, Associations, Identifiable)]
 #[belongs_to(Document)]
 pub struct Resource {

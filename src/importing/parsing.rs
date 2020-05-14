@@ -5,20 +5,66 @@ use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
 use std::collections::HashMap;
 use std::io;
+use std::io::{BufRead, BufReader};
 
 const EMPTY: &str = "";
 const STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
 
-/**
- * Parse an n-quads formatted string into a map of resources and hextuples.
- */
-pub(crate) fn parse(
+pub(crate) fn parse_hndjson<'a>(
     lookup_table: &mut LookupTable,
     payload: &[u8],
 ) -> Result<HashMap<String, Vec<Statement>>, ErrorKind> {
     let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
 
-    match NQuadsParser::new(payload) {
+    let mut data = Vec::new();
+    let mut stream = BufReader::new(payload);
+
+    loop {
+        let bytes_read = stream.read_until(b'\n', &mut data).unwrap();
+        if bytes_read == 0 {
+            return Ok(docs);
+        }
+
+        let hextuple: Vec<String> = serde_json::from_slice(&data).unwrap();
+        data.clear();
+
+        if hextuple.len() != 6 {
+            return Err(ErrorKind::ParserError(String::from(
+                "Hextuple wasn't 6 long",
+            )));
+        }
+
+        let subject = hextuple.get(0).unwrap();
+        let predicate = hextuple.get(1).unwrap();
+        let value = hextuple.get(2).unwrap();
+        let datatype = hextuple.get(3).unwrap();
+        let language = hextuple.get(4).unwrap();
+        let graph = hextuple.get(5).unwrap();
+
+        let res = create_hashtuple(
+            lookup_table,
+            &mut docs,
+            subject,
+            predicate,
+            value,
+            datatype,
+            language,
+            graph,
+        );
+    }
+}
+
+/**
+ * Parse an n-quads formatted string into a map of resources and hextuples.
+ */
+pub(crate) fn parse_nquads(
+    lookup_table: &mut LookupTable,
+    payload: &String,
+) -> Result<HashMap<String, Vec<Statement>>, ErrorKind> {
+    let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
+
+    println!("Parsing: '{}'", payload);
+    match NQuadsParser::new(payload.as_bytes()) {
         Err(e) => Err(ErrorKind::ParserError(e.to_string())),
         Ok(mut model) => {
             // The parse_all method forces TurtleError, so we're circumventing that here.
@@ -38,13 +84,16 @@ pub(crate) fn parse(
                     }
                 };
 
+                let obj = str_from_term(q.object);
                 let res = create_hashtuple(
                     lookup_table,
                     &mut docs,
-                    subj,
-                    pred,
-                    str_from_term(q.object),
-                    graph,
+                    &subj,
+                    &pred,
+                    &obj[0],
+                    &obj[1],
+                    &obj[2],
+                    &graph,
                 );
 
                 match res {
@@ -67,13 +116,16 @@ pub(crate) fn parse(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_hashtuple(
     lookup_table: &mut LookupTable,
     map: &mut HashMap<String, Vec<Statement>>,
-    subj: String,
-    pred: String,
-    obj: [String; 3],
-    graph: String,
+    subj: &str,
+    pred: &str,
+    value: &str,
+    datatype: &str,
+    language: &str,
+    graph: &str,
 ) -> Result<(), ErrorKind> {
     let split_graph: Vec<&str> = graph.split("?graph=").collect();
     let delta_op = match split_graph.first() {
@@ -84,12 +136,14 @@ fn create_hashtuple(
         }
     };
 
-    if split_graph.len() < 2 {
-        error!(target: "apex", "Graph is empty");
-        return Err(ErrorKind::OperatorWithoutGraphName);
-    }
+    let last = if split_graph.len() < 2 {
+        error!(target: "apex", "Graph is empty, defaulting to subject");
 
-    let last = split_graph.last().unwrap().split('/').last();
+        // return Err(ErrorKind::OperatorWithoutGraphName);
+        Some(subj)
+    } else {
+        split_graph.last().unwrap().split('/').last()
+    };
 
     match last {
         None => {
@@ -97,14 +151,15 @@ fn create_hashtuple(
             Err(ErrorKind::DeltaWithoutOperator)
         }
         Some(id) => {
+            println!("Parsed statement for doc {}", id);
             map.entry(String::from(id)).or_insert_with(|| vec![]);
 
             map.get_mut(id).unwrap().push(Statement::new(
                 lookup_table.ensure_value(&subj),
                 lookup_table.ensure_value(&pred),
-                lookup_table.ensure_value(&obj[0]),
-                lookup_table.ensure_value(&obj[1]),
-                lookup_table.ensure_value(&obj[2]),
+                lookup_table.ensure_value(&value),
+                lookup_table.ensure_value(&datatype),
+                lookup_table.ensure_value(&language),
                 lookup_table.ensure_value(&delta_op.to_string()),
             ));
 

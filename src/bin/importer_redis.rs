@@ -5,7 +5,7 @@ extern crate log;
 
 use apex_rs::errors::ErrorKind;
 use apex_rs::importing::events::MessageTiming;
-use apex_rs::importing::kafka::import_kafka;
+use apex_rs::importing::redis::import_redis;
 use apex_rs::reporting::reporter::report;
 use dotenv::dotenv;
 use tokio::sync::mpsc::*;
@@ -21,5 +21,5 @@ async fn main() {
 
     let (mut tx, mut rx) = channel::<Result<MessageTiming, ErrorKind>>(100);
 
-    tokio::try_join!(import_kafka(&mut tx), report(&mut rx)).unwrap();
+    tokio::try_join!(import_redis(&mut tx), report(&mut rx)).unwrap();
 }
