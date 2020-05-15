@@ -11,5 +11,8 @@ pub(crate) fn set_default_headers<'a>(
         .set_header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .set_header(header::ACCESS_CONTROL_ALLOW_METHODS, "POST, GET, OPTIONS")
         .set_header(header::ACCESS_CONTROL_MAX_AGE, 86400u32.to_string())
-        .set_header(header::VARY, "Accept, Accept-Encoding, Origin")
+        .set_header(
+            header::VARY,
+            "Accept, Accept-Encoding, Authorization, Origin",
+        )
 }
