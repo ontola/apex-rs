@@ -1,0 +1,23 @@
+<svg width="250" height="220" xmlns="http://www.w3.org/2000/svg">
+
+ <g>
+  <title>background</title>
+  <rect fill="none" id="canvas_background" height="222" width="252" y="-1" x="-1"/>
+ </g>
+ <g>
+  <title>Layer 1</title>
+  <g id="layer1">
+   <g id="g11969">
+    <rect fill="none" stroke="#000000" stroke-linejoin="bevel" stroke-miterlimit="4" stroke-dashoffset="0" id="rect11961" y="15.221047" x="68.857255" height="190.86359" width="110.45056"/>
+    <rect fill="none" stroke="#000000" stroke-linejoin="bevel" stroke-miterlimit="4" stroke-dashoffset="0" id="rect11965" transform="matrix(0.5,-0.8660254,0.8660254,0.5,0,0) " y="67.35324" x="-89.012185" height="190.86359" width="110.45056"/>
+    <rect fill="none" stroke="#000000" stroke-linejoin="bevel" stroke-miterlimit="4" stroke-dashoffset="0" id="rect11967" transform="matrix(-0.5,-0.8660254,0.8660254,-0.5,0,0) " y="-43.299593" x="-213.094719" height="190.86359" width="110.45056"/>
+   </g>
+  </g>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_1" y="11.754497" x="60.000307" stroke-width="0" stroke="#000" fill="#000000">A</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_2" y="12.077076" x="179.677159" stroke-width="0" stroke="#000" fill="#000000">P</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_3" y="115.334659" x="236.773665" stroke-width="0" stroke="#000" fill="#000000">E</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_4" y="217.882559" x="179.99974" stroke-width="0" stroke="#000" fill="#000000">X</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_5" y="217.882559" x="60.322886" stroke-width="0" stroke="#000" fill="#000000">R</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-size="14" id="svg_6" y="116.012081" x="2.581225" stroke-width="0" stroke="#000" fill="#000000">S</text>
+ </g>
+</svg>

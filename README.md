@@ -1,3 +1,7 @@
+![Apex RS Logo](./logo_title.svg)
+
+## All Programs EXecute Rdf Smoothly
+
 ### Getting started
 1. Copy and fill `.env.template` to `.env`.
 3. When using SSL with postgres
