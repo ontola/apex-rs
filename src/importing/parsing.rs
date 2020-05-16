@@ -1,11 +1,16 @@
 use crate::errors::ErrorKind;
 use crate::hashtuple::{LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI};
+use percent_encoding::percent_decode_str;
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::io::{BufRead, BufReader};
+
+/// A set of documents with their IRI as key and their resources as value
+pub(crate) type DocumentSet = HashMap<String, Vec<Statement>>;
 
 const EMPTY: &str = "";
 const STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
@@ -13,8 +18,8 @@ const STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
 pub(crate) fn parse_hndjson<'a>(
     lookup_table: &mut LookupTable,
     payload: &[u8],
-) -> Result<HashMap<String, Vec<Statement>>, ErrorKind> {
-    let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
+) -> Result<DocumentSet, ErrorKind> {
+    let mut docs: DocumentSet = HashMap::new();
 
     let mut data = Vec::new();
     let mut stream = BufReader::new(payload);
@@ -51,6 +56,10 @@ pub(crate) fn parse_hndjson<'a>(
             language,
             graph,
         );
+
+        if res.is_err() {
+            return Err(res.unwrap_err());
+        }
     }
 }
 
@@ -60,10 +69,9 @@ pub(crate) fn parse_hndjson<'a>(
 pub(crate) fn parse_nquads(
     lookup_table: &mut LookupTable,
     payload: &String,
-) -> Result<HashMap<String, Vec<Statement>>, ErrorKind> {
-    let mut docs: HashMap<String, Vec<Statement>> = HashMap::new();
+) -> Result<DocumentSet, ErrorKind> {
+    let mut docs: DocumentSet = HashMap::new();
 
-    println!("Parsing: '{}'", payload);
     match NQuadsParser::new(payload.as_bytes()) {
         Err(e) => Err(ErrorKind::ParserError(e.to_string())),
         Ok(mut model) => {
@@ -119,7 +127,7 @@ pub(crate) fn parse_nquads(
 #[allow(clippy::too_many_arguments)]
 fn create_hashtuple(
     lookup_table: &mut LookupTable,
-    map: &mut HashMap<String, Vec<Statement>>,
+    map: &mut DocumentSet,
     subj: &str,
     pred: &str,
     value: &str,
@@ -136,25 +144,27 @@ fn create_hashtuple(
         }
     };
 
-    let last = if split_graph.len() < 2 {
+    let doc_iri = if split_graph.len() < 2 {
         error!(target: "apex", "Graph is empty, defaulting to subject");
 
         // return Err(ErrorKind::OperatorWithoutGraphName);
-        Some(subj)
+        Some(String::from(subj))
     } else {
-        split_graph.last().unwrap().split('/').last()
+        let s = split_graph.last().unwrap();
+        let decoded = percent_decode_str(&s).decode_utf8().unwrap();
+
+        Some(decoded.into_owned())
     };
 
-    match last {
+    match doc_iri {
         None => {
-            error!(target: "apex", "Operator not properly formatted");
-            Err(ErrorKind::DeltaWithoutOperator)
+            error!(target: "apex", "Cannot determine target document");
+            Err(ErrorKind::OperatorWithoutGraphName)
         }
         Some(id) => {
-            println!("Parsed statement for doc {}", id);
-            map.entry(String::from(id)).or_insert_with(|| vec![]);
+            map.entry(String::from(&id)).or_insert_with(|| vec![]);
 
-            map.get_mut(id).unwrap().push(Statement::new(
+            map.get_mut(&id).unwrap().push(Statement::new(
                 lookup_table.ensure_value(&subj),
                 lookup_table.ensure_value(&pred),
                 lookup_table.ensure_value(&value),

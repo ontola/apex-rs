@@ -1,9 +1,10 @@
 use crate::db::db_context::DbContext;
-use crate::db::models::{Datatype, Predicate};
+use crate::db::models::{Datatype, Object, Predicate};
 use crate::db::schema;
+use crate::db::uu128::Uu128;
 use crate::hashtuple::{HashModel, LookupTable};
 use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::Duration;
 
@@ -11,7 +12,6 @@ const MAX_PROPERTY_INSERT_SIZE: usize = 60_000 / 8;
 
 pub(crate) fn insert_properties(
     ctx: &mut DbContext,
-    lookup_table: &LookupTable,
     model: &HashModel,
     resource_id_map: HashMap<String, i64>,
 ) {
@@ -23,30 +23,43 @@ pub(crate) fn insert_properties(
         error!(
             "Giant model detected (properties: {}, id: {})",
             model.len(),
-            lookup_table.get_by_hash(model[0].subject)
+            ctx.lookup_table.get_by_hash(model[0].subject)
         );
-        dump_model_to_screen(&lookup_table, &model);
+        dump_model_to_screen(&ctx.lookup_table, &model);
     }
+
+    let mut values = HashSet::new();
 
     for h in model {
         let resource_id = *resource_id_map
-            .get(lookup_table.get_by_hash(h.subject))
+            .get(ctx.lookup_table.get_by_hash(h.subject))
             .expect("Inserting property not inserted in resources");
 
-        let predicate = lookup_table.get_by_hash(h.predicate);
+        let predicate = ctx.lookup_table.get_by_hash(h.predicate);
         if !ctx.property_map.contains_key(predicate) {
             insert_and_update_predicate(&ctx.get_conn(), &mut ctx.property_map, predicate);
         }
 
-        let datatype = lookup_table.get_by_hash(h.datatype);
+        values.insert(Object {
+            hash: Uu128::from(h.value),
+            value: String::from(ctx.lookup_table.get_by_hash(h.value)),
+        });
+
+        let datatype = ctx.lookup_table.get_by_hash(h.datatype);
         if !ctx.datatype_map.contains_key(datatype) {
             insert_and_update_datatype(&ctx.get_conn(), &mut ctx.datatype_map, datatype);
         }
+        let datatype_id = *(&mut ctx.datatype_map)
+            .get(ctx.lookup_table.get_by_hash(h.datatype))
+            .unwrap_or_else(|| panic!("Data type not found in map ({})", h.datatype));
 
-        let language = lookup_table.get_by_hash(h.language);
+        let language = ctx.lookup_table.get_by_hash(h.language);
         if !ctx.language_map.contains_key(language) {
             insert_and_update_language(&ctx.get_conn(), &mut ctx.language_map, language);
         }
+        let language_id = *(&mut ctx.language_map)
+            .get(ctx.lookup_table.get_by_hash(h.language))
+            .unwrap_or_else(|| panic!("Language not found in map ({})", h.language));
 
         let pred_id: i32 = *ctx.property_map.get_mut(predicate).unwrap();
 
@@ -54,26 +67,25 @@ pub(crate) fn insert_properties(
             dsl::resource_id.eq(resource_id),
             dsl::predicate_id.eq(pred_id),
             //            dsl::order.eq(None),
-            dsl::value.eq(lookup_table.get_by_hash(h.value)),
-            dsl::datatype_id.eq(*(&mut ctx.datatype_map)
-                .get(lookup_table.get_by_hash(h.datatype))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Data type not found in map ({})",
-                        lookup_table.get_by_hash(h.datatype)
-                    )
-                })),
-            dsl::language_id.eq(*(&mut ctx.language_map)
-                .get(lookup_table.get_by_hash(h.language))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Language not found in map ({})",
-                        lookup_table.get_by_hash(h.language)
-                    )
-                })),
+            dsl::value.eq(""),
+            dsl::object_id.eq(Uu128::from(h.value)),
+            dsl::datatype_id.eq(datatype_id),
+            dsl::language_id.eq(language_id),
             //            dsl::prop_resource.eq(None),
         ));
     }
+
+    values
+        .into_iter()
+        .collect::<Vec<_>>()
+        .chunks(MAX_PROPERTY_INSERT_SIZE)
+        .for_each(|chunk| {
+            insert_into(schema::objects::table)
+                .values(chunk)
+                .on_conflict_do_nothing()
+                .execute(&ctx.get_conn())
+                .expect("Error while inserting into objects");
+        });
 
     properties
         .chunks(MAX_PROPERTY_INSERT_SIZE)

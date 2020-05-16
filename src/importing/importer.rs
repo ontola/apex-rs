@@ -3,9 +3,9 @@ use crate::db::document::reset_document;
 use crate::db::properties::insert_properties;
 use crate::db::resources::insert_resources;
 use crate::errors::ErrorKind;
-use crate::hashtuple::{LookupTable, Statement};
 use crate::importing::delta_processor::{add_processor_methods_to_table, apply_delta};
 use crate::importing::events::{DeltaProcessingTiming, MessageTiming};
+use crate::importing::parsing::DocumentSet;
 use diesel::prelude::*;
 use diesel::result::Error::RollbackTransaction;
 use std::collections::HashMap;
@@ -14,39 +14,35 @@ use std::time::{Duration, Instant};
 #[allow(unused_must_use)]
 pub(crate) async fn process_message(
     ctx: &mut DbContext<'_>,
-    mut lookup_table: &mut LookupTable,
-    docs: HashMap<String, Vec<Statement>>,
+    docs: DocumentSet,
 ) -> Result<MessageTiming, ErrorKind> {
     let mut result: Result<MessageTiming, ErrorKind> = Err(ErrorKind::Unexpected);
 
     ctx.db_pool
         .get()
         .unwrap()
-        .transaction::<(), diesel::result::Error, _>(|| {
-            match process_delta(ctx, &mut lookup_table, docs) {
-                Ok(timing) => {
-                    result = Ok(timing);
+        .transaction::<(), diesel::result::Error, _>(|| match process_delta(ctx, docs) {
+            Ok(timing) => {
+                result = Ok(timing);
 
-                    Ok(())
-                }
-                Err(e) => {
-                    result = Err(e);
-                    Err(RollbackTransaction)
-                }
+                Ok(())
+            }
+            Err(e) => {
+                result = Err(e);
+                Err(RollbackTransaction)
             }
         });
 
     result
 }
 
-pub(crate) fn process_delta<'a>(
-    ctx: &mut DbContext<'a>,
-    mut lookup_table: &mut LookupTable,
-    docs: HashMap<String, Vec<Statement>>,
+pub(crate) fn process_delta(
+    mut ctx: &mut DbContext,
+    docs: DocumentSet,
 ) -> Result<MessageTiming, ErrorKind> {
     let parse_start = Instant::now();
 
-    add_processor_methods_to_table(&mut lookup_table);
+    add_processor_methods_to_table(&mut ctx.lookup_table);
 
     let parse_time = Instant::now().duration_since(parse_start);
     let mut fetch_time = Duration::new(0, 0);
@@ -56,20 +52,20 @@ pub(crate) fn process_delta<'a>(
     for (iri, delta) in docs {
         let fetch_start = Instant::now();
 
-        let (existing_iri, existing_doc) = reset_document(&ctx, &mut lookup_table, &iri);
+        let (existing_iri, existing_doc) = reset_document(&mut ctx, &iri);
         fetch_time += Instant::now().duration_since(fetch_start);
 
-        let (next, delta_timing) = apply_delta(&lookup_table, &existing_doc, &delta);
+        let (next, delta_timing) = apply_delta(&ctx.lookup_table, &existing_doc, &delta);
         delta_time += delta_timing;
 
         let insert_start = Instant::now();
-        let resources = insert_resources(&ctx.get_conn(), &lookup_table, &next, existing_iri);
+        let resources = insert_resources(&ctx.get_conn(), &ctx.lookup_table, &next, existing_iri);
         let mut resource_id_map = HashMap::<String, i64>::new();
         for resource in resources {
             resource_id_map.insert(resource.iri.clone(), resource.id);
         }
 
-        insert_properties(ctx, &lookup_table, &next, resource_id_map);
+        insert_properties(ctx, &next, resource_id_map);
         insert_time += Instant::now().duration_since(insert_start);
     }
 

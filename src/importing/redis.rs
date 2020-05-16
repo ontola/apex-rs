@@ -1,6 +1,5 @@
 use crate::db::db_context::DbContext;
 use crate::errors::ErrorKind;
-use crate::hashtuple::LookupTable;
 use crate::importing::events::MessageTiming;
 use crate::importing::importer::process_message;
 use crate::importing::parsing::parse_hndjson;
@@ -38,17 +37,14 @@ pub async fn import_redis(
                         continue;
                     }
                     Ok(p) => {
-                        let mut lookup_table: LookupTable = LookupTable::default();
-                        let report = match parse_hndjson(&mut lookup_table, p.as_slice()) {
-                            Ok(model) => {
-                                match process_message(&mut ctx, &mut lookup_table, model).await {
-                                    Ok(timing) => Ok(MessageTiming {
-                                        poll_time: msg_poll_time,
-                                        ..timing
-                                    }),
-                                    Err(e) => Err(e),
-                                }
-                            }
+                        let report = match parse_hndjson(&mut ctx.lookup_table, p.as_slice()) {
+                            Ok(model) => match process_message(&mut ctx, model).await {
+                                Ok(timing) => Ok(MessageTiming {
+                                    poll_time: msg_poll_time,
+                                    ..timing
+                                }),
+                                Err(e) => Err(e),
+                            },
                             Err(e) => {
                                 error!(target: "apex", "Unexpected error: {}", e.description());
                                 Err(e)

@@ -103,7 +103,6 @@ fn remove_all(cur: &HashModel, patch: &HashModel) -> HashModel {
     next
 }
 
-/// TODO: reverse
 fn replace_matches(cur: &mut HashModel, patch: &HashModel) -> HashModel {
     let mut cleaned: HashModel = Vec::with_capacity(patch.len());
     for st in patch {
@@ -204,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_apply_delta_with_replace() {
-        let mut lookup_table = LookupTable::default();
+        let mut lookup_table = LookupTable::new(1);
         add_processor_methods_to_table(&mut lookup_table);
         let named_node = lookup_table.ensure_value(&String::from("rdf:namedNode"));
         let string = lookup_table.ensure_value(&String::from("xsd:string"));

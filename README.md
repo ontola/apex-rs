@@ -8,6 +8,7 @@
     2. Download and rename database SSL certificates to `certs` folder, see Dockerfile.
     3. Change the cert permissions `chmod -R 700 certs`
 2. Run `cargo install diesel-cli` and run `diesel setup` to initialize the db schema.
+3. Add a record to _apex_config with key "seed" and a random 32 bit integer string value
 
 
 Building the project manually

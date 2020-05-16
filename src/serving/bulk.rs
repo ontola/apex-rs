@@ -26,31 +26,34 @@ pub(crate) async fn bulk<'a>(
     payload: web::Payload,
 ) -> impl Responder {
     let pl = pool.into_inner();
-    let mut lookup_table = LookupTable::default();
     let resources = resources_from_payload(payload).await;
     if resources.is_err() {
         return HttpResponse::BadRequest().finish();
     }
 
     let bulk_docs = web::block(move || -> Result<BulkInput, i32> {
-        let ctx = DbContext::new(&pl);
+        let mut ctx = DbContext::new(&pl);
         let models: Vec<Option<HashModel>> = resources
             .unwrap()
             .iter()
             .map(|r| percent_decode_str(r).decode_utf8().unwrap())
             .map(|iri| {
-                if let Some(doc) = doc_by_iri(&ctx, &mut lookup_table, &iri) {
+                if let Ok(doc) = doc_by_iri(&mut ctx, &iri) {
                     let mut model = doc.1;
-                    model.push(status_code_statement(&mut lookup_table, &iri, 200));
+                    model.push(status_code_statement(&mut ctx.lookup_table, &iri, 200));
 
                     Some(model)
                 } else {
-                    Some(vec![status_code_statement(&mut lookup_table, &iri, 404)])
+                    Some(vec![status_code_statement(
+                        &mut ctx.lookup_table,
+                        &iri,
+                        404,
+                    )])
                 }
             })
             .collect();
 
-        Ok((models, lookup_table))
+        Ok((models, ctx.lookup_table))
     })
     .await;
 

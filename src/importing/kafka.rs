@@ -1,6 +1,5 @@
 use crate::db::db_context::DbContext;
 use crate::errors::ErrorKind;
-use crate::hashtuple::LookupTable;
 use crate::importing::events::MessageTiming;
 use crate::importing::importer::process_message;
 use crate::importing::parsing::parse_nquads;
@@ -24,8 +23,6 @@ pub async fn import_kafka(
         .subscribe(&[env::var("KAFKA_TOPIC").unwrap().as_str()])
         .expect("Subscribing to topic failed");
 
-    //    get_doc_count(db_conn);
-
     let mut stream = consumer.start();
 
     let pool = DbContext::default_pool();
@@ -43,27 +40,24 @@ pub async fn import_kafka(
             }
             Ok(msg) => {
                 if let Some(payload) = msg.payload() {
-                    let mut lookup_table: LookupTable = LookupTable::default();
                     match parse_nquads(
-                        &mut lookup_table,
+                        &mut ctx.lookup_table,
                         &String::from_utf8(Vec::from(payload)).unwrap(),
                     ) {
-                        Ok(model) => {
-                            match process_message(&mut ctx, &mut lookup_table, model).await {
-                                Ok(timing) => {
-                                    if let Err(e) = consumer.store_offset(&msg) {
-                                        warn!("Error while storing offset: {}", e);
-                                        Err(ErrorKind::Commit)
-                                    } else {
-                                        Ok(MessageTiming {
-                                            poll_time: msg_poll_time,
-                                            ..timing
-                                        })
-                                    }
+                        Ok(model) => match process_message(&mut ctx, model).await {
+                            Ok(timing) => {
+                                if let Err(e) = consumer.store_offset(&msg) {
+                                    warn!("Error while storing offset: {}", e);
+                                    Err(ErrorKind::Commit)
+                                } else {
+                                    Ok(MessageTiming {
+                                        poll_time: msg_poll_time,
+                                        ..timing
+                                    })
                                 }
-                                Err(e) => Err(e),
                             }
-                        }
+                            Err(e) => Err(e),
+                        },
                         Err(e) => Err(e),
                     }
                 } else {

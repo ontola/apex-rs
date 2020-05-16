@@ -1,5 +1,15 @@
 use crate::db::schema::*;
+use crate::db::uu128::Uu128;
 use diesel::sql_types::*;
+
+#[derive(Eq, PartialEq, Debug, Queryable, Associations, Insertable, QueryableByName)]
+#[table_name = "_apex_config"]
+pub struct ConfigItem {
+    #[sql_type = "VarChar"]
+    pub key: String,
+    #[sql_type = "VarChar"]
+    pub value: String,
+}
 
 #[derive(
     Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable, QueryableByName,
@@ -51,6 +61,13 @@ pub struct Language {
     pub value: String,
 }
 
+#[derive(Eq, PartialEq, Debug, Queryable, Associations, Insertable, Hash)]
+#[table_name = "objects"]
+pub struct Object {
+    pub hash: Uu128,
+    pub value: String,
+}
+
 #[derive(Eq, PartialEq, Debug, Queryable, Associations, Identifiable)]
 #[table_name = "properties"]
 #[primary_key(resource_id, predicate_id, order)]
@@ -64,6 +81,7 @@ pub struct Property {
     pub datatype_id: i32,
     pub language_id: Option<i32>,
     pub value: String,
+    pub object_id: Option<Uu128>,
 }
 
 #[derive(Eq, PartialEq, Debug, Associations, Insertable)]

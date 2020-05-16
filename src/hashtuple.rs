@@ -41,16 +41,22 @@ impl Statement {
 }
 
 /// Mapping between hextuple string values and their hashed ids.
-pub struct LookupTable(pub BiMap<u128, String>);
+pub struct LookupTable {
+    map: BiMap<u128, String>,
+    seed: u32,
+}
 
 impl LookupTable {
-    pub fn default() -> LookupTable {
-        LookupTable { 0: BiMap::new() }
+    pub fn new(seed: u32) -> LookupTable {
+        LookupTable {
+            map: BiMap::new(),
+            seed,
+        }
     }
 
     pub fn ensure_value(&mut self, value: &str) -> u128 {
-        let id = murmur3::hash128(&value);
-        let update = self.0.insert(id, value.to_string());
+        let id = self.calculate_hash(&value);
+        let update = self.map.insert(id, value.to_string());
         match update {
             Overwritten::Right(_, _) | Overwritten::Left(_, _) => panic!("Hash collision detected"),
             _ => (),
@@ -59,11 +65,15 @@ impl LookupTable {
         id
     }
 
+    pub fn calculate_hash(&mut self, value: &str) -> u128 {
+        murmur3::hash128_with_seed(&value, self.seed)
+    }
+
     pub fn get_by_hash(&self, id: u128) -> &String {
-        &self.0.get_by_left(&id).unwrap()
+        &self.map.get_by_left(&id).unwrap()
     }
 
     pub fn get_by_value(&self, value: String) -> u128 {
-        *self.0.get_by_right(&value).unwrap()
+        *self.map.get_by_right(&value).unwrap()
     }
 }
