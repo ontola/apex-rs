@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 actix-rt = "1.1.1"
 actix-web = "2.0.0"
+base64 = "0.12.1"
 clap = "2.33.1"
 diesel = { version = "=1.4.3", features = ["postgres", "r2d2", "uuidv07"] }
 dotenv = "0.15.0"

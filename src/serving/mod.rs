@@ -1,3 +1,4 @@
+mod assets;
 mod bulk;
 mod response_type;
 mod responses;
