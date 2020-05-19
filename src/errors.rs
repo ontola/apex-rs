@@ -4,10 +4,7 @@ error_chain! {
             description("Unexpected error occured")
         }
 
-        NoResources {
-            description("Database is empty")
-
-        }
+        NoResources
 
         EmptyDocument
 

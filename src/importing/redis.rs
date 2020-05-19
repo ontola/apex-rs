@@ -33,7 +33,9 @@ pub async fn import_redis(
                 let msg_poll_time = Instant::now().duration_since(last_listen_time);
                 match msg.get_payload::<Vec<u8>>() {
                     Err(_) => {
-                        updates.send(Err(ErrorKind::Unexpected)).await;
+                        if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                            error!(target: "apex", "Error while sending unexpected error to reporter: {}", e);
+                        }
                         continue;
                     }
                     Ok(p) => {
@@ -51,7 +53,9 @@ pub async fn import_redis(
                             }
                         };
 
-                        updates.send(report).await;
+                        if let Err(e) = updates.send(report).await {
+                            error!(target: "apex", "Error while sending stats to reporter: {}", e);
+                        }
                     }
                 }
             }
@@ -61,7 +65,9 @@ pub async fn import_redis(
                     continue;
                 }
 
-                updates.send(Err(ErrorKind::Unexpected)).await;
+                if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                    error!(target: "apex", "Error while sending error to reporter: {}", e);
+                }
             }
         }
 

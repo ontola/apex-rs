@@ -1,5 +1,6 @@
 mod assets;
 mod bulk;
+mod hpf;
 mod response_type;
 mod responses;
 mod serialization;

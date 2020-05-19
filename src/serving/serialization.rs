@@ -38,6 +38,7 @@ pub(crate) fn hash_model_to_turtle(model: (HashModel, &LookupTable)) -> Vec<u8> 
 
     formatter.finish().unwrap()
 }
+
 pub(crate) fn bulk_result_to_hextuples((docs, filled_table): BulkInput) -> Vec<u8> {
     let mut output = Vec::new();
 
@@ -108,12 +109,12 @@ fn hash_to_hex(hashtuples: HashModel, lookup_table: &LookupTable) -> HexModel {
     let mut vec = Vec::with_capacity(hashtuples.len());
     for h in hashtuples {
         vec.push([
-            lookup_table.get_by_hash(h.subject),
-            lookup_table.get_by_hash(h.predicate),
-            lookup_table.get_by_hash(h.value),
-            lookup_table.get_by_hash(h.datatype),
-            lookup_table.get_by_hash(h.language),
-            lookup_table.get_by_hash(h.graph),
+            lookup_table.get_by_hash(h.subject).unwrap(),
+            lookup_table.get_by_hash(h.predicate).unwrap(),
+            lookup_table.get_by_hash(h.value).unwrap(),
+            lookup_table.get_by_hash(h.datatype).unwrap(),
+            lookup_table.get_by_hash(h.language).unwrap(),
+            lookup_table.get_by_hash(h.graph).unwrap(),
         ]);
     }
 
@@ -124,16 +125,16 @@ fn hash_to_rio(hashtuples: HashModel, lookup_table: &LookupTable) -> Vec<Quad> {
     let mut vec = Vec::with_capacity(hashtuples.len());
 
     for h in hashtuples {
-        let graph = lookup_table.get_by_hash(h.graph);
+        let graph = lookup_table.get_by_hash(h.graph).unwrap();
         vec.push(Quad {
-            subject: to_named_or_blanknode(lookup_table.get_by_hash(h.subject)),
+            subject: to_named_or_blanknode(lookup_table.get_by_hash(h.subject).unwrap()),
             predicate: NamedNode {
-                iri: lookup_table.get_by_hash(h.predicate),
+                iri: lookup_table.get_by_hash(h.predicate).unwrap(),
             },
             object: to_object(
-                lookup_table.get_by_hash(h.value),
-                lookup_table.get_by_hash(h.datatype),
-                lookup_table.get_by_hash(h.language),
+                lookup_table.get_by_hash(h.value).unwrap(),
+                lookup_table.get_by_hash(h.datatype).unwrap(),
+                lookup_table.get_by_hash(h.language).unwrap(),
             ),
             graph_name: if graph == "" {
                 None

@@ -18,7 +18,7 @@ pub(crate) fn insert_resources(
     for r_iri in resource_iris {
         new_resources.push(NewResource {
             document_id: id,
-            iri: lookup_table.get_by_hash(r_iri).clone(),
+            iri: lookup_table.get_by_hash(r_iri).unwrap().clone(),
         });
     }
 

@@ -1,6 +1,7 @@
 use crate::db::db_context::DbContext;
 use crate::serving::assets::favicon;
 use crate::serving::bulk::bulk;
+use crate::serving::hpf::{hpf, tpf};
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use actix_web::{middleware, App, HttpServer};
 
@@ -14,6 +15,8 @@ pub async fn serve() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             .service(favicon)
             .service(bulk)
+            .service(tpf)
+            .service(hpf)
             .service(random_resource)
             .service(show_resource_ext)
             .service(show_resource)

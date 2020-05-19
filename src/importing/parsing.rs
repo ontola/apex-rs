@@ -1,10 +1,11 @@
 use crate::errors::ErrorKind;
-use crate::hashtuple::{LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI};
+use crate::hashtuple::{
+    LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI, STRING_IRI,
+};
 use percent_encoding::percent_decode_str;
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
 use rio_turtle::{NQuadsParser, TurtleError};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::io::{BufRead, BufReader};
@@ -13,7 +14,6 @@ use std::io::{BufRead, BufReader};
 pub(crate) type DocumentSet = HashMap<String, Vec<Statement>>;
 
 const EMPTY: &str = "";
-const STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
 
 pub(crate) fn parse_hndjson<'a>(
     lookup_table: &mut LookupTable,

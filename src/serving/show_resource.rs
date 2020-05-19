@@ -13,7 +13,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 #[get("/random")]
-pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Responder {
+pub(crate) async fn random_resource<'a>(
+    req: actix_web::HttpRequest,
+    pool: web::Data<DbPool>,
+) -> impl Responder {
+    let response_type = match negotiate(req.headers(), &None) {
+        Some(s) => s,
+        None => return HttpResponse::NotAcceptable().finish(),
+    };
+
     let pl = pool.into_inner();
 
     let random_doc = web::block(move || {
@@ -24,7 +32,8 @@ pub(crate) async fn random_resource<'a>(pool: web::Data<DbPool>) -> impl Respond
     .await;
 
     match random_doc {
-        Ok(doc) => HttpResponse::Ok().body(hash_model_to_hextuples((doc.0, &doc.1))),
+        Ok(doc) => set_default_headers(&mut HttpResponse::Ok(), &response_type)
+            .body(hash_model_to_hextuples((doc.0, &doc.1))),
         Err(BlockingError::Error(ErrorKind::EmptyDocument)) => HttpResponse::NoContent().finish(),
         Err(e) => {
             error!(target: "apex", "Unknown error: {}", e);

@@ -66,7 +66,9 @@ pub async fn import_kafka(
                 }
             }
         };
-        updates.send(t).await;
+        if let Err(e) = updates.send(t).await {
+            error!(target: "apex", "Error while sending result to reporter: {}", e);
+        }
         task::yield_now().await;
 
         last_listen_time = Instant::now();

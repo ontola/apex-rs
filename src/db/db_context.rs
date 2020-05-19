@@ -1,13 +1,15 @@
 use crate::db::models::{ConfigItem, Datatype, Language, Predicate};
 use crate::db::schema;
+use crate::db::schema::languages::dsl::languages;
 use crate::hashtuple::LookupTable;
+use bimap::{BiHashMap, BiMap};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::{r2d2, PgConnection};
-use std::collections::HashMap;
 use std::env;
+use std::hash::Hash;
 
-pub type IRIMapping = HashMap<String, i32>;
+pub type IRIMapping = BiMap<String, i32>;
 
 pub struct DbContext<'a> {
     pub db_pool: &'a DbPool,
@@ -15,6 +17,7 @@ pub struct DbContext<'a> {
     pub property_map: IRIMapping,
     pub datatype_map: IRIMapping,
     pub language_map: IRIMapping,
+    pub resource_map: BiMap<String, i64>,
     pub lookup_table: LookupTable,
 }
 
@@ -40,6 +43,7 @@ impl<'a> DbContext<'a> {
             property_map: get_predicates(&db_pool),
             datatype_map: get_datatypes(&db_pool),
             language_map: get_languages(&db_pool),
+            resource_map: BiMap::new(),
             lookup_table: LookupTable::new(config.seed),
             config,
         }
@@ -79,14 +83,19 @@ pub(crate) fn get_config(db_conn: &DbPool) -> Result<Config, ()> {
 fn get_predicates(db_conn: &DbPool) -> IRIMapping {
     use schema::predicates::dsl::*;
 
-    let mut map = HashMap::new();
+    let mut map = BiMap::new();
     let props = predicates
         .limit(100_000)
         .load::<Predicate>(&db_conn.get().unwrap())
         .expect("Could not fetch properties");
 
     for p in props {
-        map.entry(p.value.clone()).or_insert(p.id);
+        verified_ensure(
+            &mut map,
+            p.value.clone(),
+            p.id,
+            "Predicate or hash already present",
+        );
     }
 
     map
@@ -96,14 +105,19 @@ fn get_predicates(db_conn: &DbPool) -> IRIMapping {
 fn get_datatypes(db_conn: &DbPool) -> IRIMapping {
     use schema::datatypes::dsl::*;
 
-    let mut map = HashMap::new();
+    let mut map = BiMap::new();
     let props = datatypes
         .limit(100_000)
         .load::<Datatype>(&db_conn.get().unwrap())
         .expect("Could not fetch datatypes");
 
     for p in props {
-        map.entry(p.value.clone()).or_insert(p.id);
+        verified_ensure(
+            &mut map,
+            p.value.clone(),
+            p.id,
+            "Datatype or hash already present",
+        );
     }
 
     map
@@ -111,17 +125,32 @@ fn get_datatypes(db_conn: &DbPool) -> IRIMapping {
 
 /// Retrieve a map of language IRIs to their ids from the db.
 fn get_languages(db_conn: &DbPool) -> IRIMapping {
-    use schema::datatypes::dsl::*;
-
-    let mut map = HashMap::new();
-    let props = datatypes
+    let mut map = BiMap::new();
+    let props = languages
         .limit(100_000)
         .load::<Language>(&db_conn.get().unwrap())
         .expect("Could not fetch languages");
 
     for p in props {
-        map.entry(p.value.clone()).or_insert(p.id);
+        verified_ensure(
+            &mut map,
+            p.value.clone(),
+            p.id,
+            "Language or hash already present",
+        );
     }
 
     map
+}
+
+pub(crate) fn verified_ensure<L, R>(map: &mut BiHashMap<L, R>, left: L, right: R, msg: &'static str)
+where
+    L: Eq + Hash + Clone,
+    R: Copy + Eq + Hash,
+{
+    if let Err((left_err, right_err)) = map.insert_no_overwrite(left.clone(), right) {
+        if left != left_err || right != right_err {
+            panic!(msg);
+        }
+    }
 }

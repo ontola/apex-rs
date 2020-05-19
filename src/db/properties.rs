@@ -1,14 +1,15 @@
-use crate::db::db_context::DbContext;
+use crate::db::db_context::{verified_ensure, DbContext};
 use crate::db::models::{Datatype, Object, Predicate};
 use crate::db::schema;
 use crate::db::uu128::Uu128;
 use crate::hashtuple::{HashModel, LookupTable};
+use bimap::BiMap;
 use diesel::{insert_into, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::Duration;
 
-const MAX_PROPERTY_INSERT_SIZE: usize = 60_000 / 8;
+pub(crate) const MAX_PROPERTY_INSERT_SIZE: usize = 60_000 / 8;
 
 pub(crate) fn insert_properties(
     ctx: &mut DbContext,
@@ -23,7 +24,7 @@ pub(crate) fn insert_properties(
         error!(
             "Giant model detected (properties: {}, id: {})",
             model.len(),
-            ctx.lookup_table.get_by_hash(model[0].subject)
+            ctx.lookup_table.get_by_hash(model[0].subject).unwrap()
         );
         dump_model_to_screen(&ctx.lookup_table, &model);
     }
@@ -32,36 +33,49 @@ pub(crate) fn insert_properties(
 
     for h in model {
         let resource_id = *resource_id_map
-            .get(ctx.lookup_table.get_by_hash(h.subject))
+            .get(ctx.lookup_table.get_by_hash(h.subject).unwrap())
             .expect("Inserting property not inserted in resources");
 
-        let predicate = ctx.lookup_table.get_by_hash(h.predicate);
-        if !ctx.property_map.contains_key(predicate) {
+        let predicate = ctx
+            .lookup_table
+            .get_by_hash(h.predicate)
+            .expect("Predicate to insert not in map");
+        if !ctx.property_map.contains_left(predicate) {
             insert_and_update_predicate(&ctx.get_conn(), &mut ctx.property_map, predicate);
         }
 
         values.insert(Object {
             hash: Uu128::from(h.value),
-            value: String::from(ctx.lookup_table.get_by_hash(h.value)),
+            value: String::from(
+                ctx.lookup_table
+                    .get_by_hash(h.value)
+                    .expect("Value to insert not in map"),
+            ),
         });
 
-        let datatype = ctx.lookup_table.get_by_hash(h.datatype);
-        if !ctx.datatype_map.contains_key(datatype) {
+        let datatype = ctx
+            .lookup_table
+            .get_by_hash(h.datatype)
+            .expect("Datatype to insert not in map");
+        if !ctx.datatype_map.contains_left(datatype) {
             insert_and_update_datatype(&ctx.get_conn(), &mut ctx.datatype_map, datatype);
         }
         let datatype_id = *(&mut ctx.datatype_map)
-            .get(ctx.lookup_table.get_by_hash(h.datatype))
+            .get_by_left(ctx.lookup_table.get_by_hash(h.datatype).unwrap())
             .unwrap_or_else(|| panic!("Data type not found in map ({})", h.datatype));
 
-        let language = ctx.lookup_table.get_by_hash(h.language);
-        if !ctx.language_map.contains_key(language) {
+        let language = ctx
+            .lookup_table
+            .get_by_hash(h.language)
+            .expect("Language to insert not in map");
+        if !ctx.language_map.contains_left(language) {
             insert_and_update_language(&ctx.get_conn(), &mut ctx.language_map, language);
         }
         let language_id = *(&mut ctx.language_map)
-            .get(ctx.lookup_table.get_by_hash(h.language))
+            .get_by_left(ctx.lookup_table.get_by_hash(h.language).unwrap())
             .unwrap_or_else(|| panic!("Language not found in map ({})", h.language));
 
-        let pred_id: i32 = *ctx.property_map.get_mut(predicate).unwrap();
+        let pred_id: i32 = *ctx.property_map.get_by_left(predicate).unwrap();
 
         properties.push((
             dsl::resource_id.eq(resource_id),
@@ -99,7 +113,7 @@ pub(crate) fn insert_properties(
 
 fn insert_and_update_predicate(
     db_conn: &PgConnection,
-    map: &mut HashMap<String, i32>,
+    mut map: &mut BiMap<String, i32>,
     insert_value: &str,
 ) -> i32 {
     use schema::predicates::dsl::*;
@@ -114,14 +128,15 @@ fn insert_and_update_predicate(
                 .get_result(db_conn)
                 .unwrap_or_else(|_| panic!("Predicate not found {}", insert_value))
         });
-    map.entry(p.value).or_insert(p.id);
+
+    verified_ensure(&mut map, p.value, p.id, "Predicate or hash already present");
 
     p.id
 }
 
 fn insert_and_update_datatype(
     db_conn: &PgConnection,
-    map: &mut HashMap<String, i32>,
+    mut map: &mut BiMap<String, i32>,
     insert_value: &str,
 ) -> i32 {
     use schema::datatypes::dsl::*;
@@ -136,14 +151,14 @@ fn insert_and_update_datatype(
                 .get_result(db_conn)
                 .unwrap_or_else(|_| panic!("Datatype not found {}", insert_value))
         });
-    map.entry(p.value).or_insert(p.id);
+    verified_ensure(&mut map, p.value, p.id, "Datatype or hash already present");
 
     p.id
 }
 
 fn insert_and_update_language(
     db_conn: &PgConnection,
-    map: &mut HashMap<String, i32>,
+    mut map: &mut BiMap<String, i32>,
     insert_value: &str,
 ) -> i32 {
     use schema::languages::dsl::*;
@@ -158,7 +173,7 @@ fn insert_and_update_language(
                 .get_result(db_conn)
                 .unwrap_or_else(|_| panic!("Datatype not found {}", insert_value))
         });
-    map.entry(p.value).or_insert(p.id);
+    verified_ensure(&mut map, p.value, p.id, "Language or hash already present");
 
     p.id
 }
@@ -170,12 +185,12 @@ fn dump_model_to_screen(lookup_table: &LookupTable, model: &HashModel) {
     for hashtuple in model {
         output += format!(
             "({}, {}, {}, {}, {}, {})\n",
-            lookup_table.get_by_hash(hashtuple.subject),
-            lookup_table.get_by_hash(hashtuple.predicate),
-            lookup_table.get_by_hash(hashtuple.value),
-            lookup_table.get_by_hash(hashtuple.datatype),
-            lookup_table.get_by_hash(hashtuple.language),
-            lookup_table.get_by_hash(hashtuple.graph),
+            lookup_table.get_by_hash(hashtuple.subject).unwrap(),
+            lookup_table.get_by_hash(hashtuple.predicate).unwrap(),
+            lookup_table.get_by_hash(hashtuple.value).unwrap(),
+            lookup_table.get_by_hash(hashtuple.datatype).unwrap(),
+            lookup_table.get_by_hash(hashtuple.language).unwrap(),
+            lookup_table.get_by_hash(hashtuple.graph).unwrap(),
         )
         .as_ref();
     }

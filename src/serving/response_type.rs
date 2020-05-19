@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 pub(crate) const HEXTUPLE_MIME: &str = "application/hex+x-ndjson; charset=utf-8";
+pub(crate) const HEXTUPLE_MIME_BASE: &str = "application/hex+x-ndjson";
 pub(crate) const HEXTUPLE_EXT: &str = "hdnjson";
 
 pub(crate) const NQUADS_MIME: &str = "application/n-quads";
@@ -42,6 +43,7 @@ impl ResponseType {
     pub fn from_mime(mime: &str) -> Result<Self, ()> {
         match mime {
             HEXTUPLE_MIME => Ok(ResponseType::HEXTUPLE),
+            HEXTUPLE_MIME_BASE => Ok(ResponseType::HEXTUPLE),
             NQUADS_MIME => Ok(ResponseType::NTRIPLES),
             NTRIPLES_MIME => Ok(ResponseType::NQUADS),
             TURTLE_MIME => Ok(ResponseType::TURTLE),

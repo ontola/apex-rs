@@ -41,7 +41,7 @@ fn migrate_2020_05_15_152936() {
     use schema::properties::dsl;
 
     let pool = DbContext::default_pool();
-    let mut ctx = DbContext::new(&pool);
+    let ctx = DbContext::new(&pool);
     let db_conn = ctx.get_conn();
 
     let page_size = 8192;

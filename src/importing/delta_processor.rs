@@ -200,13 +200,14 @@ impl<'a> ProcessorInitializer for ReplaceProcessor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hashtuple::STRING_IRI;
 
     #[test]
     fn test_apply_delta_with_replace() {
         let mut lookup_table = LookupTable::new(1);
         add_processor_methods_to_table(&mut lookup_table);
         let named_node = lookup_table.ensure_value(&String::from("rdf:namedNode"));
-        let string = lookup_table.ensure_value(&String::from("xsd:string"));
+        let string = lookup_table.ensure_value(&String::from(STRING_IRI));
         let replace = lookup_table.ensure_value(&String::from(LD_REPLACE));
 
         let name = lookup_table.ensure_value(&String::from("https://schema.org/name"));
