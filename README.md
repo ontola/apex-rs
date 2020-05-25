@@ -5,7 +5,8 @@
 ### Getting started
 
 1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html).
-1. Copy and fill `.env.template` to `.env`.
+1. Copy the template env file `cp template.env .env`.
+1. Fill in the `DATABASE_URL` with your PostGres URL (e.g. `postgres://localhost`)
 1. When using SSL with postgres
     1. Download and rename database SSL certificates to `certs` folder, see Dockerfile.
     1. Change the cert permissions `chmod -R 700 certs`
