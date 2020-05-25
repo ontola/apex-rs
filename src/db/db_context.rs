@@ -58,7 +58,7 @@ impl<'a> DbContext<'a> {
     }
 
     pub fn default_pool() -> DbPool {
-        DbContext::custom_pool(env::var("DATABASE_URL").unwrap().as_str())
+        DbContext::custom_pool(env::var("DATABASE_URL").expect("No DATABASE_URL found in ENV. Is your .env file setup correctly?").as_str())
     }
 }
 
