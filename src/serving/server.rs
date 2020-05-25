@@ -3,9 +3,17 @@ use crate::serving::assets::favicon;
 use crate::serving::bulk::bulk;
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use actix_web::{middleware, App, HttpServer};
+use std::{env};
 
 pub async fn serve() -> std::io::Result<()> {
     let pool = DbContext::default_pool();
+    let address_env = env::var("SERVER_ADDRESS");
+    let address = match address_env {
+        Ok(address_env) => { address_env },
+        Err(_e) => { String::from("0.0.0.0:8080") },
+    };
+
+    println!("Listening at http://{}", address);
 
     HttpServer::new(move || {
         App::new()
@@ -18,7 +26,7 @@ pub async fn serve() -> std::io::Result<()> {
             .service(show_resource_ext)
             .service(show_resource)
     })
-    .bind("0.0.0.0:8080")?
+    .bind(address)?
     .run()
     .await
 }
