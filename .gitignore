@@ -1,4 +1,5 @@
 /target
+/persist
 .env
 .vscode
 .idea

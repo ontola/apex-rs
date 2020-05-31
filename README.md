@@ -2,9 +2,23 @@
 
 ## All Programs EXecute Rdf Source
 
-### Getting started
+- Performant RDF Triple store / Graph Database written in Rust.
+- Uses [linked-delta](https://github.com/ontola/linked-delta) events for communicating state changes.
+- Currently reads these events from kafka, but the architecture allows for kafka alternatives (redis / rabbitmb).
+- Provides a [Triple Pattern Fragments](https://linkeddatafragments.org/specification/triple-pattern-fragments/) and a [Bulk-API](https://github.com/ontola/bulk-api) endpoint for RDF queries.
+- Serializes to various RDF formats (Turtle, N-Triples, [HexTuples](https://github.com/ontola/hextuples)).
 
-1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html).
+### Running with docker-compose
+
+1. Install [docker-compose](https://docs.docker.com/compose/install/)
+1. Make sure to [enable Buildkit](https://www.docker.com/blog/faster-builds-in-compose-thanks-to-buildkit-support/). (put `export COMPOSE_DOCKER_CLI_BUILD=1` in your `.profile` file)
+1. `docker-compose up` will spin up kafka, postgres and apex-rs. It will create `./persist` directory for kafka and postgres.
+1. `docker-compose  `
+1. Visit
+
+### Running locally
+
+1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html) and kafka.
 1. Copy the template env file `cp template.env .env`.
 1. Fill in the `DATABASE_URL` with your PostGres URL (e.g. `postgres://localhost`)
 1. When using SSL with postgres
@@ -22,13 +36,17 @@ Running the project manually
 - `cargo run --bin server`
 - `cargo run --bin importer`
 
-Running the project via docker
+Auto rebuild on file changes
+- `cargo install cargo-watch`
+- `cargo watch run --bin server`
+
+Running the project via docker (make sure to [enable Buildkit](https://www.docker.com/blog/faster-builds-in-compose-thanks-to-buildkit-support/))
 - `docker run -t apex-rs:latest /usr/local/bin/server` (default without arg)
 - `docker run -t apex-rs:latest /usr/local/bin/importer`
 
 ### Troubleshooting
 
-Compiling in MacOS:
+#### Compiling in MacOS:
 
 ```
 brew install autoconf automake libtool openssl
