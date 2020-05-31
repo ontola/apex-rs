@@ -1,6 +1,7 @@
 use crate::db::db_context::DbContext;
 use crate::serving::assets::favicon;
 use crate::serving::bulk::bulk;
+use crate::serving::welcome::welcome;
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use actix_web::{middleware, App, HttpServer};
 use std::{env};
@@ -25,6 +26,7 @@ pub async fn serve() -> std::io::Result<()> {
             .service(random_resource)
             .service(show_resource_ext)
             .service(show_resource)
+            .service(welcome)
     })
     .bind(address)?
     .run()
