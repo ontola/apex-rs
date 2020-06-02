@@ -4,13 +4,13 @@ use crate::serving::bulk::bulk;
 use crate::serving::welcome::welcome;
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use actix_web::{middleware, App, HttpServer};
-use std::{env};
+use std::env;
 
 pub async fn serve() -> std::io::Result<()> {
     let pool = DbContext::default_pool();
     let address_env = env::var("SERVER_ADDRESS");
     let address = match address_env {
-        Ok(address_env) => { address_env },
+        Ok(address_env) => address_env,
         Err(_e) => { String::from("0.0.0.0:8080") },
     };
 
