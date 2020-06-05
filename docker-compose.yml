@@ -6,10 +6,13 @@ services:
       - "8080:8080"
     environment:
       - RUST_LOG=apex=info,actix_web=info,diesel=info
-      - DATABASE_URL=postgres://defaultuser:defaultpassword@db/apex
+      - DATABASE_URL=postgres://postgres:defaultpassword@db/apex
       - SERVER_ADDRESS=0.0.0.0:8080
       - REDIS_ADDRESS=redis://redis
     command: bash -c "/usr/local/bin/importer_redis && /usr/local/bin/server"
+    depends_on:
+      - db
+      - redis
   redis:
     image: "redis"
   db:
@@ -18,5 +21,17 @@ services:
       - ./persist/postgres:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=defaultpassword
-      - POSTGRES_USER=defaultuser
+      - POSTGRES_USER=postgres
       - POSTGRES_DB=apex
+    ports:
+      - 5432:5433
+  diesel-cli:
+    image: "christophwurst/diesel-cli"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://postgres:defaultpassword@db/apex
+    volumes:
+      - ./Cargo.toml:/Cargo.toml
+      - ./migrations:/migrations
+    # command: bash -c "diesel setup && diesel migration run"

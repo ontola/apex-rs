@@ -69,7 +69,7 @@ pub(crate) fn get_config(db_conn: &DbPool) -> Result<Config, ()> {
     let seed = dsl::_apex_config
         .filter(dsl::key.eq("seed"))
         .load::<ConfigItem>(&db_conn.get().unwrap())
-        .unwrap()
+        .expect("DB not setup correctly")
         .first()
         .expect("Config has no seed row")
         .value
