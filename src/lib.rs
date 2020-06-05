@@ -11,3 +11,4 @@ pub mod hashtuple;
 pub mod importing;
 pub mod reporting;
 pub mod serving;
+pub mod writing;

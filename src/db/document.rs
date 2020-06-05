@@ -59,7 +59,7 @@ pub fn random_doc(ctx: &mut DbContext) -> Result<(i64, HashModel), ErrorKind> {
     {
         Ok(doc) => doc.iri,
         Err(e) => {
-            println!("{}", e);
+        println!("{}", e);
             return Err(ErrorKind::NoResources);
         }
     };

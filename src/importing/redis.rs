@@ -7,20 +7,21 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tokio::task;
 
+pub const CHANNEL: &str = "cache";
+
 pub async fn import_redis(
     updates: &mut Sender<Result<MessageTiming, ErrorKind>>,
 ) -> Result<(), ()> {
-    let mut consumer = create_redis_consumer().expect("Failed to create redis consumer");
+    let mut redis_client = create_redis_connection().expect("Failed to create redis consumer");
     println!("Initialized redis config");
 
     let pool = DbContext::default_pool();
     let mut ctx = DbContext::new(&pool);
 
-    let mut pubsub = consumer.as_pubsub();
-    let channel = "cache";
+    let mut pubsub = redis_client.as_pubsub();
     pubsub
-        .subscribe(channel)
-        .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", channel));
+        .subscribe(CHANNEL)
+        .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", CHANNEL));
     pubsub
         .set_read_timeout(Some(Duration::from_millis(200)))
         .unwrap();
@@ -69,7 +70,7 @@ pub async fn import_redis(
     }
 }
 
-fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
+pub fn create_redis_connection() -> redis::RedisResult<redis::Connection> {
     let address = match dotenv::var("REDIS_ADDRESS") {
         Ok(line) => line,
         Err(_) => String::from("redis://127.0.0.1/"),

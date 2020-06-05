@@ -156,6 +156,8 @@ fn create_hashtuple(
         Some(decoded.into_owned())
     };
 
+    println!("Hashtuple: {}", delta_op);
+
     match doc_iri {
         None => {
             error!(target: "apex", "Cannot determine target document");
