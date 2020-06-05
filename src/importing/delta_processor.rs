@@ -2,10 +2,10 @@ use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::events::DeltaProcessingTiming;
 use std::time::Instant;
 
-const LD_ADD: &str = "http://purl.org/linked-delta/add";
-const LD_REPLACE: &str = "http://purl.org/linked-delta/replace";
-const LD_SUPPLANT: &str = "http://purl.org/linked-delta/supplant";
-const LL_SUPPLANT: &str = "http://purl.org/link-lib/supplant";
+pub const LD_ADD: &str = "http://purl.org/linked-delta/add";
+pub const LD_REPLACE: &str = "http://purl.org/linked-delta/replace";
+pub const LD_SUPPLANT: &str = "http://purl.org/linked-delta/supplant";
+pub const LL_SUPPLANT: &str = "http://purl.org/link-lib/supplant";
 
 pub trait DeltaProcessor<'a> {
     fn matches(&self, statement: Statement) -> bool;

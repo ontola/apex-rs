@@ -1,8 +1,41 @@
-
-pub(crate) struct Tuple {
-    resource: Vec<String>,
+pub struct Tuple {
+    subject: String,
+    predicate: String,
+    value: String,
+    datatype: String,
+    language: String,
+    graph: String,
 }
 
-pub fn serialize<'a>(tuples: Tuple) -> &'a &str {
-  let message = "[\"http://localhost:8080/test\", \"http://schema.org/birthDate\", \"2000-06-08\", \"http://www.w3.org/2001/XMLSchema#date\", \"\", \"http://purl.org/linked-delta/replace\"]\n";
+impl Tuple {
+    pub fn new(
+        subject: &str,
+        predicate: &str,
+        value: &str,
+        datatype: &str,
+        language: &str,
+        graph: &str,
+    ) -> Tuple {
+        Tuple {
+          subject: String::from(subject),
+          predicate: String::from(predicate),
+          value: String::from(value),
+          datatype: String::from(datatype),
+          language: String::from(language),
+          graph: String::from(graph),
+        }
+    }
+}
+
+/// Converts a tuple into an NDJSON HexTuple with escaped quotes, ready for redis.
+pub fn serialize_hextuple_redis(tuple: Tuple) -> String {
+    let message = format!("[\"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\"]\n",
+        tuple.subject,
+        tuple.predicate,
+        tuple.value,
+        tuple.datatype,
+        tuple.language,
+        tuple.graph
+    );
+    return message;
 }

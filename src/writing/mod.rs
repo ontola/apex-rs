@@ -1,1 +1,1 @@
-mod ndjson_serializer;
+pub mod ndjson_serializer;
