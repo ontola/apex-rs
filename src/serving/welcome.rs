@@ -1,14 +1,19 @@
 use actix_web::{get, HttpResponse};
+use http::status::StatusCode;
+use std::fs::read_to_string;
+
+const CUSTOM_PATH: &str = "./static_custom/index.html";
+const FALLBACK_PATH: &str = "./static/index.html";
 
 #[get("/")]
 pub(crate) async fn welcome() -> HttpResponse {
-    let html = r#"
-    <p>You're running Apex RS!</p>
-    <p>Check out <a href="/random">/random</a></p>
-    <p>And for Triple Pattern Fragment queries, check out <a href="/tpf">/tpf</a></p>
-    "#;
+    let file = read_to_string(CUSTOM_PATH)
+        .or(read_to_string(FALLBACK_PATH));
 
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(String::from(html))
+    let mut builder = HttpResponse::build(StatusCode::OK);
+
+    match file {
+        Ok(st) => builder.body(st),
+        Err(e) => builder.body(format!("{}.\nNo static page found. Add one in {} or {}.", e, CUSTOM_PATH, FALLBACK_PATH)),
+    }
 }

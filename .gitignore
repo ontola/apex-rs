@@ -1,5 +1,6 @@
 /target
 /persist
+/static_custom
 .env
 .vscode
 .idea
