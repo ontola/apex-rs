@@ -7,6 +7,7 @@ pub(crate) const LANG_STRING_IRI: &str = "http://www.w3.org/1999/02/22-rdf-synta
 
 /// An RDF statement composed of six elements, each element contains the murmur3 hash
 /// of the values string representation.
+/// https://github.com/ontola/hextuples
 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub struct Statement {
     pub subject: u128,

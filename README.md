@@ -22,7 +22,7 @@
 
 ## Add seed
 
-Apex requires a seed in its database.
+Apex-RS requires a seed in its database.
 You can set this using `psql` or a tool like PGAdmin.
 
 1. `psql -U postgres`
@@ -31,7 +31,7 @@ You can set this using `psql` or a tool like PGAdmin.
 
 ## Running locally
 
-1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html) and kafka.
+1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html) and [redis-server and redis-cli](https://redis.io/topics/quickstart).
 1. Copy the template env file `cp template.env .env`.
 1. Fill in the `DATABASE_URL` with your PostGres URL (e.g. `postgres://localhost`)
 1. When using SSL with postgres
@@ -47,15 +47,20 @@ Building the project via docker
 
 Running the project manually
 - `cargo run --bin server`
-- `cargo run --bin importer`
-
-Auto rebuild on file changes
-- `cargo install cargo-watch`
-- `cargo watch run --bin server`
+- `cargo run --bin importer_redis`
 
 Running the project via docker (make sure to [enable Buildkit](https://www.docker.com/blog/faster-builds-in-compose-thanks-to-buildkit-support/))
 - `docker run -t apex-rs:latest /usr/local/bin/server` (default without arg)
-- `docker run -t apex-rs:latest /usr/local/bin/importer`
+- `docker run -t apex-rs:latest /usr/local/bin/importer_redis`
+
+## Loading deltas using Redis
+
+Publish to the `cache` channel and use [HexTuples-ndjson](https://github.com/ontola/hextuples) for [linked-deltas](https://github.com/ontola/linked-delta).
+
+```sh
+redis-cli
+PUBLISH cache "[\"http://localhost:8080/test\", \"http://schema.org/birthDate\", \"1955-06-08\", \"http://www.w3.org/2001/XMLSchema#date\", \"\", \"http://purl.org/linked-delta/replace\"]"
+```
 
 ## Custom pages
 

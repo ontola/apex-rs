@@ -24,7 +24,7 @@ struct Reporter {
 pub async fn report(rx: &mut Receiver<Result<MessageTiming, ErrorKind>>) -> Result<(), ()> {
     let stdout = stdout();
     let mut stdout = stdout.lock();
-    println!("Reported started");
+    println!("Reporter started");
     let mut reporter = Reporter::default();
     let mut io_limiter: i8 = 0;
 
