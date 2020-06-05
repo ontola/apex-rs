@@ -70,6 +70,10 @@ pub async fn import_redis(
 }
 
 fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let address = match dotenv::var("REDIS_ADDRESS") {
+        Ok(line) => line,
+        Err(_) => String::from("redis://127.0.0.1/"),
+    };
+    let client = redis::Client::open(address)?;
     client.get_connection()
 }
