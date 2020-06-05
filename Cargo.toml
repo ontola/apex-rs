@@ -18,8 +18,8 @@ error-chain = "0.12.2"
 log = "0.4.8"
 rdkafka = { version = "0.23.1", features = ["cmake-build", "ssl", "gssapi"] }
 tokio = { version = "0.2.19", features = ["full"] }
-futures = "0.3.4"
-futures-util = "0.3.4"
+futures = "0.3.5"
+futures-util = "0.3.5"
 percent-encoding = "2.1.0"
 redis = { version = "0.16.0", features = ["tokio-rt-core"] }
 rio_api = "0.4.0"
@@ -33,3 +33,5 @@ time = "0.2.10"
 bimap = "0.4.0"
 fasthash = "0.4.0"
 humantime = "2.0.0"
+actix-files = "0.2.2"
+http = "0.2.1"

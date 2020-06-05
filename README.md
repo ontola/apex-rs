@@ -1,14 +1,14 @@
-![Apex RS Logo](./logo_title.svg)
+![Apex-RS Logo](./static/logo_title.svg)
 
-## All Programs EXecute Rdf Source
+# Apex-RS: All Programs EXecute Rdf Source
 
 - Performant RDF Triple store / Graph Database written in Rust.
 - Uses [linked-delta](https://github.com/ontola/linked-delta) events for communicating state changes.
-- Currently reads these events from kafka, but the architecture allows for kafka alternatives (redis / rabbitmb).
+- Currently supports reading these linked-delta events from both kafka and redis, but the architecture allows for alternatives.
 - Provides a [Triple Pattern Fragments](https://linkeddatafragments.org/specification/triple-pattern-fragments/) and a [Bulk-API](https://github.com/ontola/bulk-api) endpoint for RDF queries.
 - Serializes to various RDF formats (Turtle, N-Triples, [HexTuples](https://github.com/ontola/hextuples)).
 
-### Running with docker-compose
+## Running with docker-compose
 
 1. Install [docker-compose](https://docs.docker.com/compose/install/)
 1. Make sure to [enable Buildkit](https://www.docker.com/blog/faster-builds-in-compose-thanks-to-buildkit-support/). (put `export COMPOSE_DOCKER_CLI_BUILD=1` in your `.profile` file)
@@ -16,7 +16,7 @@
 1. `docker-compose  `
 1. Visit
 
-### Running locally
+## Running locally
 
 1. Set up [postgres](https://www.postgresql.org/docs/current/tutorial-install.html) and kafka.
 1. Copy the template env file `cp template.env .env`.
@@ -44,9 +44,17 @@ Running the project via docker (make sure to [enable Buildkit](https://www.docke
 - `docker run -t apex-rs:latest /usr/local/bin/server` (default without arg)
 - `docker run -t apex-rs:latest /usr/local/bin/importer`
 
-### Troubleshooting
+## Custom pages
 
-#### Compiling in MacOS:
+You can customize the static welcome page + assets by creating a `./static_custom` folder.
+
+```sh
+cp -R static static_custom
+```
+
+## Troubleshooting
+
+### Compiling in MacOS:
 
 ```
 brew install autoconf automake libtool openssl
