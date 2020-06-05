@@ -7,19 +7,11 @@ services:
     environment:
       - RUST_LOG=apex=info,actix_web=info,diesel=info
       - DATABASE_URL=postgres://defaultuser:defaultpassword@db/apex
-      - KAFKA_ADDRESS=kafka:9092
-      - KAFKA_USERNAME=
-      - KAFKA_PASSWORD=
-      - KAFKA_GROUP_ID=
-      - KAFKA_TOPIC=test
       - SERVER_ADDRESS=0.0.0.0:8080
-  kafka:
-    image: "bitnami/kafka:latest"
-    environment:
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper
-    volumes:
-      - ./persist/kafka:/bitnami/kafka
+      - REDIS_ADDRESS=redis://redis
+    command: bash -c "/usr/local/bin/importer_redis && /usr/local/bin/server"
+  redis:
+    image: "redis"
   db:
     image: "postgres"
     volumes:
@@ -28,7 +20,3 @@ services:
       - POSTGRES_PASSWORD=defaultpassword
       - POSTGRES_USER=defaultuser
       - POSTGRES_DB=apex
-  zookeeper:
-    image: "bitnami/zookeeper:latest"
-    environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
