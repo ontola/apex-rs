@@ -25,6 +25,7 @@ VOLUME /root/.postgresql
 COPY --from=builder \
     /usr/src/app/target/release/server \
     /usr/src/app/target/release/importer \
+    /usr/src/app/target/release/importer_redis \
     /usr/local/bin/
 
 CMD /usr/local/bin/server
