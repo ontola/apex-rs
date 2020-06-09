@@ -57,7 +57,8 @@ Running the project via docker (make sure to [enable Buildkit](https://www.docke
 
 Publish to the `cache` channel and use [HexTuples-ndjson](https://github.com/ontola/hextuples) for [linked-deltas](https://github.com/ontola/linked-delta).
 
-```sh
+```shis-12a
+
 redis-cli
 PUBLISH cache "[\"http://localhost:8080/test\", \"http://schema.org/birthDate\", \"1955-06-08\", \"http://www.w3.org/2001/XMLSchema#date\", \"\", \"http://purl.org/linked-delta/replace\"]"
 ```
@@ -70,11 +71,19 @@ You can customize the static welcome page + assets by creating a `./static_custo
 cp -R static static_custom
 ```
 
+## Apex CLI tool: lwrite
+
+ldwrite is a CLI tool for creating linked-deltas from your terminal.
+
+```sh
+cargo run --bin ldwrite
+```
+
 ## Troubleshooting
 
 ### Compiling in MacOS:
 
-```
+```sh
 brew install autoconf automake libtool openssl
 
 git clone https://github.com/cyrusimap/cyrus-sasl.git
@@ -83,5 +92,6 @@ sh ./autogen.sh
 make
 sudo make install
 cd ..
+# For the next compilations, run this
 OPENSSL_ROOT_DIR=/usr/local/opt/openssl cargo run --bin server
 ```
