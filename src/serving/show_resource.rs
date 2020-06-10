@@ -27,7 +27,10 @@ pub(crate) async fn random_resource<'a>(
     let random_doc = web::block(move || {
         let mut ctx = DbContext::new(&pl);
 
-        random_doc(&mut ctx).map(|(_, model)| (model, ctx.lookup_table))
+        match random_doc(&mut ctx) {
+            Ok((_, model)) => Ok((model, ctx.lookup_table)),
+            Err(e) => Err(e),
+        }
     })
     .await;
 

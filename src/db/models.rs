@@ -1,5 +1,6 @@
 use crate::db::schema::*;
 use crate::db::uu128::Uu128;
+use chrono::NaiveDateTime;
 use diesel::sql_types::*;
 
 #[derive(Eq, PartialEq, Debug, Queryable, Associations, Insertable, QueryableByName)]
@@ -12,13 +13,19 @@ pub struct ConfigItem {
 }
 
 #[derive(
-    Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable, QueryableByName,
+    Clone, Eq, PartialEq, Debug, Queryable, Associations, Identifiable, Insertable, QueryableByName,
 )]
 pub struct Document {
     #[sql_type = "Int8"]
     pub id: i64,
     #[sql_type = "VarChar"]
     pub iri: String,
+    #[sql_type = "Timestamp"]
+    pub created_at: NaiveDateTime,
+    #[sql_type = "Timestamp"]
+    pub updated_at: NaiveDateTime,
+    #[sql_type = "SmallInt"]
+    pub cache_control: i16,
 }
 
 #[derive(Eq, PartialEq, Debug, Associations, Insertable)]

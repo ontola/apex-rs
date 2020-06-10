@@ -21,7 +21,7 @@ pub async fn serve() -> std::io::Result<()> {
             .service(show_resource_ext)
             .service(show_resource)
     })
-    .bind("0.0.0.0:8080")?
+    .bind("0.0.0.0:3030")?
     .run()
     .await
 }

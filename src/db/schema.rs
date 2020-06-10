@@ -16,6 +16,9 @@ table! {
     documents (id) {
         id -> Int8,
         iri -> Varchar,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        cache_control -> Int2,
     }
 }
 

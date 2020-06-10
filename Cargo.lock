@@ -291,6 +291,7 @@ dependencies = [
  "actix-web",
  "base64 0.12.1",
  "bimap",
+ "chrono",
  "clap",
  "diesel",
  "dotenv",
@@ -312,6 +313,7 @@ dependencies = [
  "serde_qs",
  "time 0.2.12",
  "tokio",
+ "url",
  "uuid",
 ]
 
@@ -529,6 +531,7 @@ checksum = "80094f509cf8b5ae86a4966a39b3ff66cd7e2a3e594accec3743ff3fabeab5b2"
 dependencies = [
  "num-integer",
  "num-traits",
+ "serde",
  "time 0.1.43",
 ]
 
@@ -676,6 +679,7 @@ checksum = "9d7cc03b910de9935007861dce440881f69102aaaedfd4bc5a6f40340ca5840c"
 dependencies = [
  "bitflags",
  "byteorder",
+ "chrono",
  "diesel_derives",
  "pq-sys",
  "r2d2",

@@ -2,6 +2,7 @@ use crate::errors::ErrorKind;
 use crate::hashtuple::{
     LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI, STRING_IRI,
 };
+use crate::rdf::iri_utils::stem_iri;
 use percent_encoding::percent_decode_str;
 use rio_api::model::{Literal, NamedOrBlankNode, Term};
 use rio_api::parser::QuadsParser;
@@ -145,10 +146,9 @@ fn create_hashtuple(
     };
 
     let doc_iri = if split_graph.len() < 2 {
-        error!(target: "apex", "Graph is empty, defaulting to subject");
+        debug!(target: "apex", "Graph is empty, defaulting to stemmed subject");
 
-        // return Err(ErrorKind::OperatorWithoutGraphName);
-        Some(String::from(subj))
+        Some(stem_iri(subj))
     } else {
         let s = split_graph.last().unwrap();
         let decoded = percent_decode_str(&s).decode_utf8().unwrap();

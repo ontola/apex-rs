@@ -52,14 +52,15 @@ pub(crate) fn process_delta(
     for (iri, delta) in docs {
         let fetch_start = Instant::now();
 
-        let (existing_iri, existing_doc) = reset_document(&mut ctx, &iri);
+        let (existing_doc, existing_model) = reset_document(&mut ctx, &iri);
         fetch_time += Instant::now().duration_since(fetch_start);
 
-        let (next, delta_timing) = apply_delta(&ctx.lookup_table, &existing_doc, &delta);
+        let (next, delta_timing) = apply_delta(&ctx.lookup_table, &existing_model, &delta);
         delta_time += delta_timing;
 
         let insert_start = Instant::now();
-        let resources = insert_resources(&ctx.get_conn(), &ctx.lookup_table, &next, existing_iri);
+        let resources =
+            insert_resources(&ctx.get_conn(), &ctx.lookup_table, &next, existing_doc.id);
         let mut resource_id_map = HashMap::<String, i64>::new();
         for resource in resources {
             resource_id_map.insert(resource.iri.clone(), resource.id);

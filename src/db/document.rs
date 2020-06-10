@@ -6,7 +6,10 @@ use crate::errors::ErrorKind;
 use crate::hashtuple::{HashModel, Statement};
 use diesel::prelude::*;
 
-pub fn doc_by_iri(mut ctx: &mut DbContext, iri: &str) -> Result<(i64, HashModel), ErrorKind> {
+pub fn doc_by_iri<'a>(
+    mut ctx: &'a mut DbContext,
+    iri: &str,
+) -> Result<(Document, HashModel), ErrorKind> {
     let docs = get_document(&mut ctx, iri);
     let first = docs.first();
 
@@ -43,7 +46,7 @@ pub fn doc_by_iri(mut ctx: &mut DbContext, iri: &str) -> Result<(i64, HashModel)
         }
     }
 
-    Ok((doc.id, props))
+    Ok((doc.clone(), props))
 }
 
 const RANDOM_DOC_ID: &str = "SELECT *
@@ -54,7 +57,7 @@ FROM  (
 JOIN documents USING (id)
 LIMIT  1;";
 
-pub fn random_doc(ctx: &mut DbContext) -> Result<(i64, HashModel), ErrorKind> {
+pub fn random_doc(ctx: &mut DbContext) -> Result<(Document, HashModel), ErrorKind> {
     let random_iri = match diesel::sql_query(RANDOM_DOC_ID).get_result::<Document>(&ctx.get_conn())
     {
         Ok(doc) => doc.iri,
@@ -69,7 +72,7 @@ pub fn random_doc(ctx: &mut DbContext) -> Result<(i64, HashModel), ErrorKind> {
 
 const EMPTY_STRING: &str = "";
 
-pub(crate) fn reset_document(mut ctx: &mut DbContext, iri: &str) -> (i64, HashModel) {
+pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Document, HashModel) {
     match doc_by_iri(&mut ctx, iri) {
         Err(_) => {
             let doc = &NewDocument {
@@ -80,7 +83,7 @@ pub(crate) fn reset_document(mut ctx: &mut DbContext, iri: &str) -> (i64, HashMo
                 .get_result::<Document>(&ctx.get_conn())
                 .expect("Error while inserting into documents");
 
-            (doc.id, vec![])
+            (doc, vec![])
         }
         Ok(model) => {
             delete_document_data(&ctx.get_conn(), iri);

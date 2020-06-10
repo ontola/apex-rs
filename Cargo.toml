@@ -10,8 +10,9 @@ edition = "2018"
 actix-rt = "1.1.1"
 actix-web = "2.0.0"
 base64 = "0.12.1"
+chrono = { version = "0.4", features = ["serde"] }
 clap = "2.33.1"
-diesel = { version = "=1.4.3", features = ["postgres", "r2d2", "uuidv07"] }
+diesel = { version = "=1.4.3", features = ["chrono", "postgres", "r2d2", "uuidv07"] }
 dotenv = "0.15.0"
 env_logger = "0.7"
 error-chain = "0.12.2"
@@ -28,6 +29,7 @@ serde = { version = "1.0.106", features = ["derive"] }
 serde_derive = "1.0.106"
 serde_json = "1.0"
 serde_qs = "0.5"
+url = "2.1.1"
 uuid = { version = "0.7", features = ["serde"] }
 time = "0.2.10"
 bimap = "0.4.0"
