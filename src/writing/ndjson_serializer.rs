@@ -9,20 +9,20 @@ pub struct Tuple {
 
 impl Tuple {
     pub fn new(
-        subject: &str,
-        predicate: &str,
-        value: &str,
-        datatype: &str,
-        language: &str,
-        graph: &str,
+        subject: String,
+        predicate: String,
+        value: String,
+        datatype: String,
+        language: String,
+        graph: String,
     ) -> Tuple {
         Tuple {
-          subject: String::from(subject),
-          predicate: String::from(predicate),
-          value: String::from(value),
-          datatype: String::from(datatype),
-          language: String::from(language),
-          graph: String::from(graph),
+          subject,
+          predicate,
+          value,
+          datatype,
+          language,
+          graph,
         }
     }
 }

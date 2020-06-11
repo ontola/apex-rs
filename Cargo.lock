@@ -334,7 +334,6 @@ dependencies = [
  "humantime 2.0.0",
  "log",
  "percent-encoding 2.1.0",
- "rdf",
  "rdkafka",
  "redis",
  "rio_api",
@@ -1676,12 +1675,6 @@ checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
 ]
-
-[[package]]
-name = "rdf"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb1725bf0133fe4a3279e18efd6d69f952cb8356bf8b835023042e1b98d4c646"
 
 [[package]]
 name = "rdkafka"

@@ -35,50 +35,44 @@ fn main() {
         _ => panic!(format!("Unknown command. {}", AVAILABLE_COMMANDS)),
     };
 
-    let mut subject: &str;
-    let mut predicate: &str;
-    let mut value: &str;
-    let mut datatype: &str;
-    let mut language: &str;
-    let mut trips: Vec<Triple> = Vec::new();
+    let mut subject: String = String::from("");
+    let mut predicate: String = String::from("");
+    let mut val: String = String::from("");
+    let mut dt: String = String::from("");
+    let mut lang: String = String::from("");
     TurtleParser::new(TTL_BASE.as_ref(), "")
         .unwrap()
-        .parse_step(&mut |t| {
-          trips.push(t);
-          Ok(()) as Result<(), TurtleError>
+        .parse_all(&mut |trip| {
+            match trip.subject {
+                rio_api::model::NamedOrBlankNode::NamedNode(nn) => subject = nn.iri.into(),
+                rio_api::model::NamedOrBlankNode::BlankNode(bn) => subject = bn.id.into(),
+            };
+
+            predicate = trip.predicate.iri.into();
+            match trip.object {
+                rio_api::model::Term::NamedNode(nn) => val = nn.iri.into(),
+                rio_api::model::Term::BlankNode(bn) => val = bn.id.into(),
+                rio_api::model::Term::Literal(li) => {
+                    match li {
+                        rio_api::model::Literal::Simple { value } => {
+                            val = value.into();
+                        }
+                        rio_api::model::Literal::LanguageTaggedString { value, language } => {
+                            val = value.into();
+                            lang = language.into();
+                        }
+                        rio_api::model::Literal::Typed { value, datatype } => {
+                            val = value.into();
+                            dt = datatype.iri.into();
+                        }
+                    }
+                }
+            }
+            Ok(()) as Result<(), TurtleError>
         })
         .unwrap();
-        // .parse_all(&mut |t| {
-        //     triple = t.clone();
-        //     Ok(()) as Result<(), TurtleError>
-        // })
-        // .unwrap();
 
-      let mut count = 0;
-      TurtleParser::new(TTL_BASE.as_ref(), "").unwrap().parse_all(&mut |t| {
-          if t.predicate == rdf_type && t.object == schema_person.into() {
-              count += 1;
-          }
-          Ok(()) as Result<(), TurtleError>
-      }).unwrap();
-
-    let first_triple = trips[0];
-
-    match first_triple.subject {
-        rio_api::model::NamedOrBlankNode::NamedNode(nn) => subject = nn.iri,
-        rio_api::model::NamedOrBlankNode::BlankNode(bn) => subject = bn.id,
-    };
-
-    predicate = first_triple.predicate.iri.clone();
-    match first_triple.object {
-        rio_api::model::Term::NamedNode(nn) => value = nn.iri,
-        rio_api::model::Term::BlankNode(bn) => {}
-        rio_api::model::Term::Literal(li) => {}
-    }
-
-    println!("{:?}", subject);
-
-    let tuple = Tuple::new(subject, predicate, value, datatype, language, method);
+    let tuple = Tuple::new(subject, predicate, val, dt, lang, String::from(method));
 
     let message = serialize_hextuple_redis(tuple);
     println!("{:?}", message);
