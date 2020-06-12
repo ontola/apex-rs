@@ -192,6 +192,6 @@ fn create_table(row_name: &str, columns: Vec<(&str, Duration)>) -> String {
 }
 
 #[inline]
-fn humanize(label: &str, time: Duration) -> String {
+pub(crate) fn humanize(label: &str, time: Duration) -> String {
     format!("{:.<10}.{:<27}| ", label, format_duration(time).to_string())
 }

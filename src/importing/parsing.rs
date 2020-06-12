@@ -146,7 +146,7 @@ fn create_hashtuple(
     };
 
     let doc_iri = if split_graph.len() < 2 {
-        debug!(target: "apex", "Graph is empty, defaulting to stemmed subject");
+        // debug!(target: "apex", "Graph is empty, defaulting to stemmed subject");
 
         Some(stem_iri(subj))
     } else {
