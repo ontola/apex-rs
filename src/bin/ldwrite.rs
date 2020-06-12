@@ -5,43 +5,84 @@ extern crate log;
 use apex_rs::importing::delta_processor::{LD_ADD, LD_REPLACE, LD_SUPPLANT};
 use apex_rs::importing::redis::{create_redis_connection, CHANNEL};
 use apex_rs::writing::ndjson_serializer::{serialize_hextuple_redis, Tuple};
+use clap::{self, App, Arg};
 use redis::{self, Commands};
-
-use rio_api::{model::Triple, parser::TriplesParser};
+use rio_api::parser::TriplesParser;
 use rio_turtle::{TurtleError, TurtleParser};
 
-const AVAILABLE_COMMANDS: &str = "Available: 'add', 'replace', 'supplant'";
+static METHODS: &[&str] = &["add", "replace", "supplant"];
 
-const TTL_BASE: &str = "
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix foaf: <http://xmlns.com/foaf/0.1/> .
-
-rdf:joep foaf:test \"someval\"@en-US.
-";
-
-/// Simple CLI for editing data in Apex-RS. Publishes deltas to Redis.
 fn main() {
-    let method_arg = std::env::args()
-        .nth(1)
-        .expect(format!("No method given. {}", AVAILABLE_COMMANDS).as_str());
-    let subject_arg = std::env::args().nth(2).expect("No subject given.");
-    let predicate_arg = std::env::args().nth(3).expect("No predicate given.");
-    let object_arg = std::env::args().nth(3).expect("No object given.");
-    let mut method = "";
-    match method_arg.as_str() {
+    // Use Clap only for providing some help functions.
+    let matches = App::new("ldwrite")
+        .version("0.1.0")
+        .about("Simple CLI for editing data in Apex-RS. Publishes deltas to Redis.")
+        .author("Joep Meindertsma - joep@ontola.io")
+        .arg(
+            Arg::with_name("method")
+            .possible_values(METHODS)
+            .required(true)
+            .help("How the statement should be processed.")
+        )
+        .arg(
+            Arg::with_name("subject")
+            .required(true)
+            .help("A subject URI, e.g. <https://example.com/something> or prefix:SomeThing")
+        )
+        .arg(
+            Arg::with_name("predicate")
+            .required(true)
+            .help("A predicate URI, e.g. <https://example.com/something> or prefix:SomeThing")
+        )
+        .arg(
+            Arg::with_name("object")
+            .required(true)
+            .help("An object URI or literal value , e.g. <https://example.com/something>, prefix:SomeThing or \\\"string value\\\"^xsd:string (escape quotes!) ")
+        )
+        .get_matches()
+        ;
+    let subject_arg = matches.value_of("subject").expect("No subject");
+    let predicate_arg = matches.value_of("predicate").expect("No predicate");
+    let object_arg = matches.value_of_lossy("object").expect("No object");
+    println!("object: {}\n", object_arg);
+    let method;
+    match matches.value_of("method").expect("no method") {
         "add" => method = LD_ADD,
         "replace" => method = LD_REPLACE,
         "supplant" => method = LD_SUPPLANT,
         _ => panic!(format!("Unknown command. {}", AVAILABLE_COMMANDS)),
     };
 
+    let mut prefixes: Vec<Prefix> = Vec::new();
+
+    // Should be read from some prefix config file
+    let foaf_prefix = Prefix {
+        key: String::from("foaf"),
+        value: String::from("http://xmlns.com/foaf/0.1/"),
+    };
+    let rdf_prefix = Prefix {
+        key: String::from("rdf"),
+        value: String::from("http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+    };
+
+    prefixes.push(foaf_prefix);
+    prefixes.push(rdf_prefix);
+
+    // Todo: Read these from `~/.ldget/prefixes`
+    let mut ttl: String = String::from("");
+
+    for prefix in prefixes {
+        ttl.push_str(format!("@prefix {}: <{}> .\n", prefix.key, prefix.value).as_str())
+    }
+
+    ttl.push_str(format!("{} {} {} .\n", subject_arg, predicate_arg, object_arg).as_str());
     let mut subject: String = String::from("");
     let mut predicate: String = String::from("");
     let mut val: String = String::from("");
     let mut dt: String = String::from("");
     let mut lang: String = String::from("");
-    TurtleParser::new(TTL_BASE.as_ref(), "")
-        .unwrap()
+    TurtleParser::new(ttl.as_ref(), "")
+        .expect("Failed to start parser.")
         .parse_all(&mut |trip| {
             match trip.subject {
                 rio_api::model::NamedOrBlankNode::NamedNode(nn) => subject = nn.iri.into(),
@@ -52,32 +93,40 @@ fn main() {
             match trip.object {
                 rio_api::model::Term::NamedNode(nn) => val = nn.iri.into(),
                 rio_api::model::Term::BlankNode(bn) => val = bn.id.into(),
-                rio_api::model::Term::Literal(li) => {
-                    match li {
-                        rio_api::model::Literal::Simple { value } => {
-                            val = value.into();
-                        }
-                        rio_api::model::Literal::LanguageTaggedString { value, language } => {
-                            val = value.into();
-                            lang = language.into();
-                        }
-                        rio_api::model::Literal::Typed { value, datatype } => {
-                            val = value.into();
-                            dt = datatype.iri.into();
-                        }
+                rio_api::model::Term::Literal(li) => match li {
+                    rio_api::model::Literal::Simple { value } => {
+                        val = value.into();
                     }
-                }
+                    rio_api::model::Literal::LanguageTaggedString { value, language } => {
+                        val = value.into();
+                        lang = language.into();
+                        dt = "http://www.w3.org/2001/XMLSchema#string".into();
+                    }
+                    rio_api::model::Literal::Typed { value, datatype } => {
+                        val = value.into();
+                        dt = datatype.iri.into();
+                    }
+                },
             }
             Ok(()) as Result<(), TurtleError>
         })
-        .unwrap();
+        .expect("Could not parse input as Turtle.");
 
     let tuple = Tuple::new(subject, predicate, val, dt, lang, String::from(method));
 
     let message = serialize_hextuple_redis(tuple);
-    println!("{:?}", message);
     let mut con = create_redis_connection().expect("Connection to redis failed");
     let _: () = con
-        .publish(CHANNEL, message)
+        .publish(CHANNEL, &message)
         .expect("Could not publish command to redis");
+    println!("Published to redis: {:?}", message);
+}
+
+const AVAILABLE_COMMANDS: &str = "Available: 'add', 'replace', 'supplant'";
+/// A single key / value combination for URL shorthands
+struct Prefix {
+    /// The shorthand (e.g. 'foaf')
+    key: String,
+    /// The base URL (e.g. 'http://xmlns.com/foaf/0.1/')
+    value: String,
 }

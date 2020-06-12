@@ -71,12 +71,14 @@ You can customize the static welcome page + assets by creating a `./static_custo
 cp -R static static_custom
 ```
 
-## Apex CLI tool: lwrite
+## Apex CLI tool: ldwrite
 
 ldwrite is a CLI tool for creating linked-deltas from your terminal.
 
 ```sh
-cargo run --bin ldwrite
+# ldwrite {method} {triple, serialized in turtle}
+# Add a HexTuple
+cargo run --bin ldwrite add rdf:joep foaf:test \"someval\"@en-US
 ```
 
 ## Troubleshooting
