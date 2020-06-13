@@ -14,7 +14,7 @@ use crate::serving::serialization::{
 };
 use actix_http::error::BlockingError;
 use actix_web::client::Client;
-use actix_web::http::header;
+use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
 use percent_encoding::percent_decode_str;
@@ -183,17 +183,15 @@ pub(crate) async fn bulk<'a>(
     };
     let serialize_time = Instant::now().duration_since(serialize_start);
 
-    if cfg!(debug_assertions) {
-        // TODO: async send to collection service or something
-        let timing = BulkTiming {
-            parse_time,
-            lookup_time,
-            sort_time,
-            authorize_timing,
-            serialize_time,
-        };
-        log_report(timing);
-    }
+    // TODO: async send to collection service or something
+    let timing = BulkTiming {
+        parse_time,
+        lookup_time,
+        sort_time,
+        authorize_timing,
+        serialize_time,
+    };
+    log_report(timing);
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
 }
@@ -215,25 +213,31 @@ async fn authorize_resources(
     resources_in_cache: &Vec<String>,
 ) -> Result<Vec<SPIResourceResponseItem>, ErrorKind> {
     let client = Client::default();
-    let auth = req
-        .headers()
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let website = req.headers().get("website-iri").unwrap().to_str().unwrap();
-    let forward_for = req
-        .headers()
-        .get("x-forwarded-for")
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let forward_host = req
-        .headers()
-        .get("x-forwarded-host")
-        .unwrap()
-        .to_str()
-        .unwrap();
+
+    let headers = req.headers();
+    let header = ["website-iri", "origin", "host"]
+        .iter()
+        .find(|header| headers.contains_key(String::from(**header)));
+    let website = match header {
+        Some(key) => match headers.get(*key).unwrap().to_str() {
+            Ok(iri) => iri,
+            Err(_) => {
+                return Err(ErrorKind::ParserError(format!(
+                    "Bad website iri (from {})",
+                    key
+                )))
+            }
+        },
+        None => {
+            return Err(ErrorKind::ParserError(
+                "No headers to determine tenant".into(),
+            ))
+        }
+    };
+    debug!("Using website: {}", website);
+
+    let forward_for = req.headers().get("x-forwarded-for");
+    let forward_host = req.headers().get("x-forwarded-host");
 
     let mut included: i32 = 0;
     let items = resources
@@ -250,7 +254,7 @@ async fn authorize_resources(
         })
         .collect();
     let total = resources.len() as i32;
-    debug!("test: auth: {}, include: {}", total, included);
+    debug!("Documents; {} to authorize, {} to include", total, included);
     let request = SPIBulkRequest { resources: &items };
 
     // Find tenant
@@ -258,30 +262,62 @@ async fn authorize_resources(
     let tenant_req_body = SPITenantFinderRequest {
         iri: website.into(),
     };
-    let tenant = client
+    let tenant_res = client
         .get(format!("{}/_public/spi/find_tenant", core_api_url).as_str())
         .header(header::USER_AGENT, "Apex/1")
         .send_json(&tenant_req_body)
-        .await
-        .expect("Error finding tenant")
-        .json::<SPITenantFinderResponse>()
-        .await
-        .expect("Error parsing tenant finder response");
-    let tenant_path = tenant.database_schema;
-    debug!(target: "apex", "Tenant: {}", tenant_path);
+        .await;
+    let mut tenant_res = tenant_res.expect("Error finding tenant");
+    let tenant_path = match tenant_res.status() {
+        StatusCode::OK => {
+            let tenant = tenant_res
+                .json::<SPITenantFinderResponse>()
+                .await
+                .expect("Error parsing tenant finder response");
+            tenant.database_schema
+        }
+        StatusCode::NOT_FOUND => {
+            bail!(ErrorKind::NoTenant);
+        }
+        _ => {
+            debug!(target: "apex", "Unexpected status tenant finder: Got HTTP {}", tenant_res.status());
+            return Err(ErrorKind::Unexpected);
+        }
+    };
+    trace!(target: "apex", "Tenant: {}", tenant_path);
+    let auth = req
+        .headers()
+        .get("authorization")
+        .map(|s| s.to_str().unwrap());
 
     // Create request builder and send request
-    let response = client
+    let mut response = client
         .post(format!("{}/{}/spi/bulk", core_api_url, tenant_path))
-        .header(header::AUTHORIZATION, auth)
         .header(header::USER_AGENT, "Apex/1")
-        .header("X-Forwarded-For", forward_for)
-        .header("X-Forwarded-Host", forward_host)
         .header("X-Forwarded-Proto", "https")
         .header("X-Forwarded-Ssl", "on")
-        .header("Website-IRI", website)
-        .send_json(&request)
-        .await;
+        .header("Website-IRI", website);
+
+    if auth.is_some() {
+        response = response.header(header::AUTHORIZATION, auth.unwrap())
+    }
+
+    let response = match forward_for {
+        Some(forward_for) => match forward_for.to_str() {
+            Ok(forward_for) => response.header("X-Forwarded-For", forward_for),
+            Err(_) => response,
+        },
+        None => response,
+    };
+    let response = match forward_host {
+        Some(forward_host) => match forward_host.to_str() {
+            Ok(forward_host) => response.header("X-Forwarded-Host", forward_host),
+            Err(_) => response,
+        },
+        None => response,
+    };
+
+    let response = response.send_json(&request).await;
 
     match response {
         Err(e) => {
@@ -289,7 +325,14 @@ async fn authorize_resources(
             Err(ErrorKind::Unexpected)
         }
         Ok(mut response) => {
-            let body = response.body().await.unwrap().to_vec();
+            let body = match response.body().limit(100_000_000).await {
+                Ok(body) => body.to_vec(),
+                Err(e) => {
+                    warn!(target: "apex", "Error while decoding backend auth response: {}", e);
+
+                    return Err(ErrorKind::Unexpected);
+                }
+            };
 
             match serde_json::from_slice::<Vec<SPIResourceResponseItem>>(&body) {
                 Ok(data) => Ok(data),
@@ -334,7 +377,7 @@ fn log_report(timing: BulkTiming) {
     );
     let serialize_msg = humanize("serialize", timing.serialize_time);
 
-    info!(target: "apex", "Bulk time: {}{}{}{}{}", parse_msg, lookup_msg, sort_msg, auth_msg, serialize_msg);
+    debug!(target: "apex", "Bulk time: {}{}{}{}{}", parse_msg, lookup_msg, sort_msg, auth_msg, serialize_msg);
     let internal_time = timing.parse_time
         + timing.lookup_time
         + timing.sort_time
@@ -359,7 +402,7 @@ async fn lookup_resources(
             .map(stem_iri)
             .map(|iri| {
                 if let Ok(doc) = doc_by_iri(&mut ctx, &iri) {
-                    debug!(
+                    trace!(
                         "Load ok: {}, cc: {}, stmts: {}",
                         doc.0.iri,
                         CacheControl::from(doc.0.cache_control),
@@ -372,7 +415,7 @@ async fn lookup_resources(
                         data: doc.1,
                     }
                 } else {
-                    debug!("Load failed: {}", iri);
+                    trace!("Load failed: {}", iri);
                     Resource {
                         iri,
                         status: 404,
@@ -398,10 +441,18 @@ async fn process_non_public_and_missing(
 ) -> Result<(LookupTable, AuthorizeTiming), actix_http::Response> {
     let authorize_start = Instant::now();
 
-    debug!("Authorize {} documents", non_public_resources.len());
+    trace!("Authorize {} documents", non_public_resources.len());
     let auth_result =
         match authorize_resources(&req, non_public_resources, &resources_in_cache).await {
             Ok(data) => data,
+            Err(ErrorKind::NoTenant) => {
+                debug!(target: "apex", "Couldn't determine tenant");
+                return Err(HttpResponse::BadRequest().finish());
+            }
+            Err(ErrorKind::ParserError(msg)) => {
+                debug!(target: "apex", "Error while authorizing: {}", msg);
+                return Err(HttpResponse::BadRequest().finish());
+            }
             Err(err) => {
                 error!(target: "apex", "Unexpected error while authorizing: {}", err);
                 return Err(HttpResponse::InternalServerError().finish());
@@ -415,7 +466,7 @@ async fn process_non_public_and_missing(
     let uncached_and_included: Vec<&SPIResourceResponseItem> = auth_result
         .iter()
         .filter(|r| {
-            debug!(target: "apex", "Auth result; iri: {}, status: {}, cache: {}, included: {}", r.iri, r.status, r.cache, r.body.is_some());
+            trace!(target: "apex", "Auth result; iri: {}, status: {}, cache: {}, included: {}", r.iri, r.status, r.cache, r.body.is_some());
             r.status == 200 && !resources_in_cache.contains(&r.iri) && r.body.is_some()
         })
         .collect();
@@ -446,7 +497,7 @@ async fn process_non_public_and_missing(
         .collect();
 
     if !uncached_and_cacheable.is_empty() {
-        debug!(target: "apex", "Writing {} uncached resources to db", uncached_and_cacheable.len());
+        trace!(target: "apex", "Writing {} uncached resources to db", uncached_and_cacheable.len());
         let pl = pool.into_inner();
         let mut ctx = DbContext::new(&pl);
         ctx.lookup_table = lookup_table;
@@ -465,8 +516,17 @@ async fn process_non_public_and_missing(
 
     for (n, docset) in uncached_and_included_documents.iter().enumerate() {
         let document = uncached_and_included.get(n).unwrap();
+        trace!(target: "apex", "Including uncached document: {} as status {}", document.iri, document.status);
+        // TODO: handle redirects / responses without included identity resource?
+        bulk_docs.push(Resource {
+            iri: document.iri.clone(),
+            status: document.status,
+            cache_control: document.cache,
+            data: Vec::with_capacity(0),
+        });
 
         for (iri, data) in docset {
+            trace!(target: "apex", "|- including uncached resource: {} as status {}", iri, document.status);
             bulk_docs.push(Resource {
                 iri: iri.clone(),
                 status: document.status,
@@ -534,10 +594,13 @@ async fn resources_from_payload(mut payload: web::Payload) -> Result<HashSet<Str
 fn sort<'a>(resources: Vec<String>, bulk_docs: &mut Vec<Resource>) -> (Vec<String>, Vec<String>) {
     let resources_in_cache: Vec<String> = bulk_docs
         .iter_mut()
-        .filter(|r| r.status == 200)
+        .filter(|r| r.status == 200 && !r.data.is_empty())
         .map(|r| r.iri.clone())
         .collect();
-    debug!("resources_in_cache {}", resources_in_cache.join(","));
+    trace!(
+        "Non-empty resources already in cache: {}",
+        resources_in_cache.join(", ")
+    );
 
     // 4. RS sends bulk authorize request to BE for all non-public resources (process The status code and cache headers per resource)
     let non_public_resources = resources

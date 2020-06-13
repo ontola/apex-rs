@@ -1,8 +1,12 @@
 error_chain! {
     errors {
+        ToDo
+
         Unexpected {
             description("Unexpected error occured")
         }
+
+        NoTenant
 
         NoResources
 

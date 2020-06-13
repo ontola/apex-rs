@@ -4,6 +4,8 @@ use crate::db::schema;
 use crate::db::schema::objects::dsl as objects;
 use crate::errors::ErrorKind;
 use crate::hashtuple::{HashModel, Statement};
+use diesel::debug_query;
+use diesel::pg::Pg;
 use diesel::prelude::*;
 
 pub fn doc_by_iri<'a>(
@@ -14,7 +16,7 @@ pub fn doc_by_iri<'a>(
     let first = docs.first();
 
     if docs.is_empty() {
-        debug!(target: "apex", "Doc with iri '{}' is empty", iri);
+        warn!(target: "apex", "Doc with iri '{}' is empty", iri);
         return Err(ErrorKind::EmptyDocument);
     }
 
@@ -62,7 +64,7 @@ pub fn random_doc(ctx: &mut DbContext) -> Result<(Document, HashModel), ErrorKin
     {
         Ok(doc) => doc.iri,
         Err(e) => {
-            println!("{}", e);
+            warn!("{}", e);
             return Err(ErrorKind::NoResources);
         }
     };
@@ -139,14 +141,18 @@ fn get_document(
         .load::<Resource>(&db_conn)
         .unwrap();
 
-    let doc_properties: Vec<Property> =
-        match Property::belonging_to(&doc_resources).load::<Property>(&db_conn) {
-            Ok(res) => res,
-            Err(e) => {
-                println!("{:?}", e);
-                vec![]
-            }
-        };
+    let q = Property::belonging_to(&doc_resources);
+    if cfg!(debug_assertions) {
+        let sql = debug_query::<Pg, _>(&q).to_string();
+        debug!(target: "apex", "Executing bulk query: {}", sql);
+    }
+    let doc_properties: Vec<Property> = match q.load::<Property>(&db_conn) {
+        Ok(res) => res,
+        Err(e) => {
+            println!("{:?}", e);
+            vec![]
+        }
+    };
 
     let object_ids = doc_properties
         .iter()

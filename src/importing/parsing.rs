@@ -31,7 +31,13 @@ pub(crate) fn parse_hndjson<'a>(
             return Ok(docs);
         }
 
-        let hextuple: Vec<String> = serde_json::from_slice(&data).unwrap();
+        let hextuple: Vec<String> = match serde_json::from_slice::<Vec<String>>(&data) {
+            Ok(h) => h,
+            Err(e) => {
+                error!(target: "apex", "Error '{}' while parsing data '{}'", e, String::from_utf8(data).unwrap());
+                bail!(ErrorKind::ParserError(String::from("Malformed payload")))
+            }
+        };
         data.clear();
 
         if hextuple.len() != 6 {
@@ -146,9 +152,10 @@ fn create_hashtuple(
     };
 
     let doc_iri = if split_graph.len() < 2 {
-        // debug!(target: "apex", "Graph is empty, defaulting to stemmed subject");
+        let stemmed = stem_iri(subj);
+        debug!(target: "apex", "Graph is empty, defaulting to stemmed subject: {}", stemmed);
 
-        Some(stem_iri(subj))
+        Some(stemmed)
     } else {
         let s = split_graph.last().unwrap();
         let decoded = percent_decode_str(&s).decode_utf8().unwrap();

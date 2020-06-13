@@ -3,6 +3,7 @@ use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
 use crate::importing::importer::process_message;
 use crate::importing::parsing::parse_hndjson;
+use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tokio::task;
@@ -17,10 +18,10 @@ pub async fn import_redis(
     let mut ctx = DbContext::new(&pool);
 
     let mut pubsub = consumer.as_pubsub();
-    let channel = "cache";
+    let channel = env::var("CACHE_CHANNEL").expect("No redis channel set");
     pubsub
-        .subscribe(channel)
-        .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", channel));
+        .subscribe(&channel)
+        .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", &channel));
     pubsub
         .set_read_timeout(Some(Duration::from_millis(200)))
         .unwrap();
