@@ -13,11 +13,19 @@ pub(crate) const NTRIPLES_EXT: &str = "nt";
 pub(crate) const TURTLE_MIME: &str = "text/turtle";
 pub(crate) const TURTLE_EXT: &str = "ttl";
 
+pub(crate) const JSONLD_MIME: &str = "application/ld+json";
+pub(crate) const JSONLD_EXT: &str = "jsonld";
+
+pub(crate) const JSON_MIME: &str = "application/json";
+pub(crate) const JSON_EXT: &str = "json";
+
 pub enum ResponseType {
     HEXTUPLE,
     TURTLE,
     NQUADS,
     NTRIPLES,
+    JSONLD,
+    JSON,
 }
 
 impl ResponseType {
@@ -27,6 +35,8 @@ impl ResponseType {
             NQUADS_EXT => Ok(ResponseType::NQUADS),
             NTRIPLES_EXT => Ok(ResponseType::NTRIPLES),
             TURTLE_EXT => Ok(ResponseType::TURTLE),
+            JSONLD_EXT => Ok(ResponseType::JSONLD),
+            JSON_EXT => Ok(ResponseType::JSON),
             _ => Err(()),
         }
     }
@@ -37,6 +47,8 @@ impl ResponseType {
             ResponseType::NQUADS => String::from(NQUADS_EXT),
             ResponseType::NTRIPLES => String::from(NTRIPLES_EXT),
             ResponseType::TURTLE => String::from(TURTLE_EXT),
+            ResponseType::JSONLD => String::from(JSONLD_EXT),
+            ResponseType::JSON => String::from(JSON_EXT),
         }
     }
 
@@ -47,6 +59,8 @@ impl ResponseType {
             NQUADS_MIME => Ok(ResponseType::NTRIPLES),
             NTRIPLES_MIME => Ok(ResponseType::NQUADS),
             TURTLE_MIME => Ok(ResponseType::TURTLE),
+            JSONLD_MIME => Ok(ResponseType::JSONLD),
+            JSON_MIME => Ok(ResponseType::JSON),
             _ => Err(()),
         }
     }
@@ -57,6 +71,8 @@ impl ResponseType {
             ResponseType::NQUADS => String::from(NQUADS_MIME),
             ResponseType::NTRIPLES => String::from(NTRIPLES_MIME),
             ResponseType::TURTLE => String::from(TURTLE_MIME),
+            ResponseType::JSONLD => String::from(JSONLD_MIME),
+            ResponseType::JSON => String::from(JSON_MIME),
         }
     }
 }

@@ -109,6 +109,7 @@ async fn show<'a>(pl: Arc<DbPool>, iri: &str, response_type: ResponseType) -> Ht
             hash_model_to_ntriples((model, &lookup_table))
         }
         ResponseType::TURTLE => hash_model_to_turtle((model, &lookup_table)),
+        _ => return HttpResponse::NotAcceptable().finish(),
     };
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type)
