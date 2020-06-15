@@ -15,8 +15,8 @@ static METHODS: &[&str] = &["add", "replace", "supplant"];
 fn main() {
     // Use Clap only for providing some help functions.
     let matches = App::new("ldwrite")
-        .version("0.1.0")
-        .about("Simple CLI for editing data in Apex-RS. Publishes deltas to Redis.")
+        .version("0.1.1")
+        .about("Simple CLI for editing data in Apex-RS. Publishes linked-deltas to Redis. Reads URI prefixes from ~/.ldget/prefixes.")
         .author("Joep Meindertsma - joep@ontola.io")
         .arg(
             Arg::with_name("method")
@@ -52,25 +52,10 @@ fn main() {
         _ => panic!(format!("Unknown command. {}", AVAILABLE_COMMANDS)),
     };
 
-    let mut prefixes: Vec<Prefix> = Vec::new();
-
-    // Should be read from some prefix config file
-    let foaf_prefix = Prefix {
-        key: String::from("foaf"),
-        value: String::from("http://xmlns.com/foaf/0.1/"),
-    };
-    let rdf_prefix = Prefix {
-        key: String::from("rdf"),
-        value: String::from("http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
-    };
-
-    prefixes.push(foaf_prefix);
-    prefixes.push(rdf_prefix);
-
-    // Todo: Read these from `~/.ldget/prefixes`
+    // I use a Turtle parser to parse the arguments and apply the prefixes
     let mut ttl: String = String::from("");
 
-    for prefix in prefixes {
+    for prefix in get_prefixes() {
         ttl.push_str(format!("@prefix {}: <{}> .\n", prefix.key, prefix.value).as_str())
     }
 
@@ -81,7 +66,7 @@ fn main() {
     let mut dt: String = String::from("");
     let mut lang: String = String::from("");
     TurtleParser::new(ttl.as_ref(), "")
-        .expect("Failed to start parser.")
+        .expect("Failed to start parser")
         .parse_all(&mut |trip| {
             match trip.subject {
                 rio_api::model::NamedOrBlankNode::NamedNode(nn) => subject = nn.iri.into(),
@@ -109,7 +94,7 @@ fn main() {
             }
             Ok(()) as Result<(), TurtleError>
         })
-        .expect("Could not parse input as Turtle.");
+        .expect("Could not parse input as Turtle");
 
     let tuple = Tuple::new(subject, predicate, val, dt, lang, String::from(method));
 
@@ -123,9 +108,54 @@ fn main() {
 
 const AVAILABLE_COMMANDS: &str = "Available: 'add', 'replace', 'supplant'";
 /// A single key / value combination for URL shorthands
+#[derive(Debug)]
 struct Prefix {
     /// The shorthand (e.g. 'foaf')
     key: String,
     /// The base URL (e.g. 'http://xmlns.com/foaf/0.1/')
     value: String,
+}
+
+/// Finds the prefixes file, parses it and returns the Prefixes
+fn get_prefixes() -> Vec<Prefix> {
+    let mut prefixes: Vec<Prefix> = Vec::new();
+
+    let mut prefixes_path = dirs::home_dir().expect("No home dir found.");
+    prefixes_path.push(".ldget/prefixes");
+
+    let foaf_prefix = Prefix {
+        key: String::from("foaf"),
+        value: String::from("http://xmlns.com/foaf/0.1/"),
+    };
+    let rdf_prefix = Prefix {
+        key: String::from("rdf"),
+        value: String::from("http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+    };
+
+    prefixes.push(foaf_prefix);
+    prefixes.push(rdf_prefix);
+
+    match std::fs::read_to_string(prefixes_path) {
+        Ok(contents) => {
+            for line in contents.lines() {
+                match line.chars().next() {
+                    Some('#') => {}
+                    Some(' ') => {}
+                    Some(_) => {
+                        let split: Vec<&str> = line.split("=").collect();
+                        if split.len() == 2 {
+                            let found = Prefix {
+                                key: String::from(split[0]),
+                                value: String::from(split[1]),
+                            };
+                            prefixes.push(found)
+                        };
+                    }
+                    None => {}
+                };
+            }
+            prefixes
+        }
+        Err(_) => prefixes
+    }
 }
