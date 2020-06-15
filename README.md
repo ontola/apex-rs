@@ -76,9 +76,10 @@ cp -R static static_custom
 ldwrite is a CLI tool for creating linked-deltas from your terminal.
 
 ```sh
-# ldwrite {method} {triple, serialized in turtle}
+# Install to path
+cargo install --bin ldwrite --path .
 # Add a HexTuple
-cargo run --bin ldwrite add rdf:joep foaf:test \"someval\"@en-US
+ldwrite add rdf:joep foaf:test \"someval\"@en-US
 ```
 
 ## Troubleshooting

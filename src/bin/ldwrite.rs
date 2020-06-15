@@ -44,7 +44,6 @@ fn main() {
     let subject_arg = matches.value_of("subject").expect("No subject");
     let predicate_arg = matches.value_of("predicate").expect("No predicate");
     let object_arg = matches.value_of_lossy("object").expect("No object");
-    println!("object: {}\n", object_arg);
     let method;
     match matches.value_of("method").expect("no method") {
         "add" => method = LD_ADD,
