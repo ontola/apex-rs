@@ -45,6 +45,7 @@ impl Statement {
 }
 
 /// Mapping between hextuple string values and their hashed ids.
+#[derive(Debug)]
 pub struct LookupTable {
     map: BiMap<u128, String>,
     seed: u32,

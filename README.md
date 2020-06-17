@@ -27,6 +27,31 @@ Running the project via docker
 ### osx
 For compiling
 ```
+
+## Custom pages
+
+You can customize the static welcome page + assets by creating a `./static_custom` folder.
+
+```sh
+cp -R static static_custom
+```
+
+## Apex CLI tool: ldwrite
+
+ldwrite is a CLI tool for creating linked-deltas from your terminal.
+
+```sh
+# Install to path
+cargo install --bin ldwrite --path .
+# Add a HexTuple
+ldwrite add rdf:joep foaf:test \"someval\"@en-US
+```
+
+## Troubleshooting
+
+### Compiling in MacOS:
+
+```sh
 brew install autoconf automake libtool openssl
 
 git clone https://github.com/cyrusimap/cyrus-sasl.git
@@ -34,6 +59,7 @@ cd cyrus-sasl/
 sh ./autogen.sh
 make
 sudo make install
-
-OPENSSL_ROOT_DIR=/usr/local/opt/openssl cargo run
+cd ..
+# For the next compilations, run this
+OPENSSL_ROOT_DIR=/usr/local/opt/openssl cargo run --bin server
 ```

@@ -96,6 +96,7 @@ async fn show<'a>(pl: Arc<DbPool>, iri: &str, response_type: ResponseType) -> Ht
     .await;
 
     if doc.is_err() {
+        println!("Error: {:?}", doc.err().unwrap());
         return HttpResponse::NotFound().finish();
     }
 
