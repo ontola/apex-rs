@@ -17,9 +17,12 @@ use crate::db::schema::resources::dsl as resources;
 use crate::db::uu128::Uu128;
 use crate::errors::ErrorKind;
 use crate::hashtuple::{
-    HashModel, Statement, NAMED_NODE_IRI, OBJECT_IRI, PREDICATE_IRI, STRING_IRI, SUBJECT_IRI,
+    HashModel, Statement, LANG_STRING_IRI, NAMED_NODE_IRI, OBJECT_IRI, PREDICATE_IRI, STRING_IRI,
+    SUBJECT_IRI,
 };
 use actix_web::Either;
+use diesel::debug_query;
+use diesel::pg::Pg;
 use diesel::prelude::*;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -254,6 +257,10 @@ impl HPFQuery {
             }
         };
 
+        if cfg!(debug_assertions) {
+            let sql = debug_query::<Pg, _>(&q).to_string();
+            debug!(target: "apex", "Executing H/TPF query: {}", sql);
+        }
         let matches = q.load::<Property>(&conn).unwrap();
 
         ensure_subjects(&mut db_ctx, &matches);
@@ -471,30 +478,37 @@ fn parse_object(
                     "Invalid object parameter formatting".into(),
                 )),
             }?;
-            let datatype_id = *db_ctx
-                .datatype_map
-                .get_by_left(&val_datatype.into())
-                .unwrap();
-            let language_id = *db_ctx.language_map.get_by_left(&"".into()).unwrap();
+            let datatype_id = db_ctx.datatype_map.get_by_left(&val_datatype.into());
+            let language_id = db_ctx.language_map.get_by_left(&"".into());
 
             (datatype_id, language_id)
         } else if s.contains("@") {
-            let val_datatype = s.split("@").collect::<Vec<&str>>();
-            let datatype_id = *db_ctx
-                .datatype_map
-                .get_by_left(&val_datatype[1].into())
-                .unwrap();
-            let language_id = *db_ctx.language_map.get_by_left(&"".into()).unwrap();
+            let lang = s.split("@").collect::<Vec<&str>>()[1];
+            let datatype_id = db_ctx.datatype_map.get_by_left(&LANG_STRING_IRI.into());
+            let language_id = db_ctx.language_map.get_by_left(&lang.into());
 
             (datatype_id, language_id)
         } else {
-            let datatype_id = *db_ctx.datatype_map.get_by_left(&STRING_IRI.into()).unwrap();
-            // let language_id = *db_ctx.language_map.get("").unwrap();
+            let datatype_id = db_ctx.datatype_map.get_by_left(&STRING_IRI.into());
 
-            (datatype_id, 0)
+            (datatype_id, None)
         };
 
-        Ok((Either::B(value), Either::B(datatype_id), Either::B(lang_id)))
+        let datatype = match datatype_id {
+            Some(id) => Either::B(*id),
+            None => Either::A(Variable {
+                _name: String::from("anonymous"),
+            }),
+        };
+
+        let lang = match lang_id {
+            Some(id) => Either::B(*id),
+            None => Either::A(Variable {
+                _name: String::from("anonymous"),
+            }),
+        };
+
+        Ok((Either::B(value), datatype, lang))
     } else {
         let value = Uu128::from(db_ctx.lookup_table.ensure_value(&s));
 
@@ -506,7 +520,9 @@ fn parse_object(
                     .get_by_left(&NAMED_NODE_IRI.into())
                     .unwrap(),
             ),
-            Either::B(*db_ctx.language_map.get_by_left(&"".into()).unwrap()),
+            Either::A(Variable {
+                _name: String::from("anonymous"),
+            }),
         ))
     }
 }
