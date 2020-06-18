@@ -22,6 +22,8 @@ struct Envelope {
 struct EndpointMap {
     /// Bulk endpoint
     pub bulk: Option<EndpointInformation>,
+    /// Update endpoint
+    pub update: Option<EndpointInformation>,
     /// Triple pattern fragments endpoint
     pub tpf: Option<EndpointInformation>,
     /// Hex pattern fragments endpoint
@@ -95,6 +97,13 @@ pub(crate) async fn service_info<'a>() -> impl Responder {
             method: "POST".into(),
             content_types: ct_map,
             stability: EndpointStability::Supported,
+            info: None,
+        }),
+        update: Some(EndpointInformation {
+            path: "/update".into(),
+            method: "POST".into(),
+            content_types: ct_map,
+            stability: EndpointStability::Experimental,
             info: None,
         }),
         tpf: Some(EndpointInformation {
