@@ -1,4 +1,6 @@
-use crate::hashtuple::{HashModel, LookupTable, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI};
+use crate::hashtuple::{
+    HashModel, LookupTable, Statement, BLANK_NODE_IRI, LANG_STRING_IRI, NAMED_NODE_IRI,
+};
 use rio_api::formatter::{QuadsFormatter, TriplesFormatter};
 use rio_api::model::{BlankNode, Literal, NamedNode, NamedOrBlankNode, Quad, Term, Triple};
 use rio_turtle::{NQuadsFormatter, NTriplesFormatter, TurtleFormatter};
@@ -16,11 +18,15 @@ pub(crate) fn hash_model_to_hextuples(model: (HashModel, &LookupTable)) -> Vec<u
 
     let test = hash_to_hex(doc, &filled_table);
     for h in test {
-        output.append(serde_json::to_vec(&h).unwrap().as_mut());
+        output.append(hextuple_to_utf8(&h).as_mut());
         output.push(ND_DELIMITER);
     }
 
     output
+}
+
+pub(crate) fn hextuple_to_utf8(s: &Hextuple) -> Vec<u8> {
+    serde_json::to_vec(s).unwrap()
 }
 
 pub(crate) fn hash_model_to_ntriples(model: (HashModel, &LookupTable)) -> Vec<u8> {
@@ -90,6 +96,20 @@ pub(crate) fn bulk_result_to_nquads((docs, filled_table): BulkInput) -> Vec<u8> 
     formatter.finish()
 }
 
+pub(crate) fn hashtuple_to_hextuple<'a>(
+    h: &Statement,
+    lookup_table: &'a LookupTable,
+) -> Hextuple<'a> {
+    [
+        lookup_table.get_by_hash(h.subject).unwrap(),
+        lookup_table.get_by_hash(h.predicate).unwrap(),
+        lookup_table.get_by_hash(h.value).unwrap(),
+        lookup_table.get_by_hash(h.datatype).unwrap(),
+        lookup_table.get_by_hash(h.language).unwrap(),
+        lookup_table.get_by_hash(h.graph).unwrap(),
+    ]
+}
+
 fn format_model<T>(formatter: &mut T, (doc, filled_table): (HashModel, &LookupTable))
 where
     T: TriplesFormatter,
@@ -108,14 +128,7 @@ where
 fn hash_to_hex(hashtuples: HashModel, lookup_table: &LookupTable) -> HexModel {
     let mut vec = Vec::with_capacity(hashtuples.len());
     for h in hashtuples {
-        vec.push([
-            lookup_table.get_by_hash(h.subject).unwrap(),
-            lookup_table.get_by_hash(h.predicate).unwrap(),
-            lookup_table.get_by_hash(h.value).unwrap(),
-            lookup_table.get_by_hash(h.datatype).unwrap(),
-            lookup_table.get_by_hash(h.language).unwrap(),
-            lookup_table.get_by_hash(h.graph).unwrap(),
-        ]);
+        vec.push(hashtuple_to_hextuple(&h, &lookup_table));
     }
 
     vec

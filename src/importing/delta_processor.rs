@@ -1,5 +1,8 @@
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::events::DeltaProcessingTiming;
+use crate::serving::serialization::{
+    hash_model_to_hextuples, hashtuple_to_hextuple, hextuple_to_utf8,
+};
 use std::time::Instant;
 
 const LD_ADD: &str = "http://purl.org/linked-delta/add";
@@ -25,7 +28,7 @@ pub fn default_processors<'a>(
     lookup_table: &'a LookupTable,
 ) -> Vec<Box<dyn DeltaProcessor<'a> + 'a>> {
     vec![
-        //         SupplantProcessor {},
+        Box::new(SupplantProcessor::<'a> { lookup_table }),
         Box::new(AddProcessor::<'a> { lookup_table }),
         Box::new(ReplaceProcessor::<'a> { lookup_table }),
         //         RemoveProcessor {},
@@ -37,6 +40,7 @@ pub fn default_processors<'a>(
 pub fn add_processor_methods_to_table(lookup_table: &mut LookupTable) {
     AddProcessor::initialize(lookup_table);
     ReplaceProcessor::initialize(lookup_table);
+    SupplantProcessor::initialize(lookup_table);
 }
 
 /// FIXME: Be sure to call `add_processor_methods_to_table` on the `lookup_table` beforehand.
@@ -58,15 +62,22 @@ pub fn apply_delta(
     timing.setup_time = setup_end.duration_since(setup_start);
 
     for statement in delta {
-        let processor = processors.iter().find(|p| p.matches(*statement));
-        if processor.is_some() {
-            let (adds, replaces, removes) = processor
-                .expect("No processor for delta")
-                .process(current, &delta, *statement);
+        match processors.iter().find(|p| p.matches(*statement)) {
+            Some(processor) => {
+                let (adds, replaces, removes) = processor.process(current, &delta, *statement);
 
-            addable.extend(adds);
-            replaceable.extend(replaces);
-            removable.extend(removes);
+                addable.extend(adds);
+                replaceable.extend(replaces);
+                removable.extend(removes);
+            }
+            None => {
+                let hex = String::from_utf8(hextuple_to_utf8(&hashtuple_to_hextuple(
+                    statement,
+                    &lookup_table,
+                )))
+                .unwrap();
+                warn!(target: "apex", "No processor for statement, discarding: {}", hex);
+            }
         }
     }
     let sort_end = Instant::now();
@@ -88,6 +99,8 @@ pub fn apply_delta(
         add_all(&mut result, &addable);
     }
     timing.add_time = Instant::now().duration_since(replace_end);
+
+    trace!(target: "apex", "Result after delta: {}", String::from_utf8(hash_model_to_hextuples((result.clone(), &lookup_table))).unwrap());
 
     (result, timing)
 }
@@ -168,8 +181,6 @@ impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
         let graph = statement.graph;
 
         graph == self.lookup_table.get_by_value(String::from(LD_REPLACE))
-            || graph == self.lookup_table.get_by_value(String::from(LD_SUPPLANT))
-            || graph == self.lookup_table.get_by_value(String::from(LL_SUPPLANT))
     }
 
     fn process(
@@ -186,6 +197,35 @@ impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
 impl<'a> ProcessorInitializer for ReplaceProcessor<'a> {
     fn initialize(lookup_table: &mut LookupTable) {
         lookup_table.ensure_value(&String::from(LD_REPLACE));
+    }
+}
+
+struct SupplantProcessor<'a> {
+    lookup_table: &'a LookupTable,
+}
+impl<'a> DeltaProcessor<'a> for SupplantProcessor<'a> {
+    #[rustfmt::skip]
+    fn matches(&self, statement: Statement) -> bool {
+        let graph = statement.graph;
+
+        graph == self.lookup_table.get_by_value(String::from(LD_SUPPLANT))
+            || graph == self.lookup_table.get_by_value(String::from(LL_SUPPLANT))
+    }
+
+    fn process(
+        &self,
+        cur: &HashModel,
+        _: &HashModel,
+        st: Statement,
+    ) -> (HashModel, HashModel, HashModel) {
+        let replaces = vec![st];
+        let removes = cur.clone();
+
+        (Vec::with_capacity(0), replaces, removes)
+    }
+}
+impl<'a> ProcessorInitializer for SupplantProcessor<'a> {
+    fn initialize(lookup_table: &mut LookupTable) {
         lookup_table.ensure_value(&String::from(LD_SUPPLANT));
         lookup_table.ensure_value(&String::from(LL_SUPPLANT));
     }

@@ -3,7 +3,7 @@ mod bulk;
 mod hpf;
 mod response_type;
 mod responses;
-mod serialization;
+pub(crate) mod serialization;
 mod server;
 mod service_info;
 mod show_resource;
