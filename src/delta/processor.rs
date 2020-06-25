@@ -1,3 +1,7 @@
+use crate::delta::delta_processor::DeltaProcessor;
+use crate::delta::processors::add_processor::AddProcessor;
+use crate::delta::processors::replace_processor::ReplaceProcessor;
+use crate::delta::processors::supplant_processor::SupplantProcessor;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::events::DeltaProcessingTiming;
 use crate::serving::serialization::{
@@ -5,22 +9,7 @@ use crate::serving::serialization::{
 };
 use std::time::Instant;
 
-const LD_ADD: &str = "http://purl.org/linked-delta/add";
-const LD_REPLACE: &str = "http://purl.org/linked-delta/replace";
-const LD_SUPPLANT: &str = "http://purl.org/linked-delta/supplant";
-const LL_SUPPLANT: &str = "http://purl.org/link-lib/supplant";
-
-pub trait DeltaProcessor<'a> {
-    fn matches(&self, statement: Statement) -> bool;
-    fn process(
-        &self,
-        current: &HashModel,
-        delta: &HashModel,
-        statement: Statement,
-    ) -> (HashModel, HashModel, HashModel);
-}
-
-trait ProcessorInitializer {
+pub(crate) trait ProcessorInitializer {
     fn initialize(lookup_table: &mut LookupTable);
 }
 
@@ -145,98 +134,6 @@ fn contains(model: &HashModel, h: &Statement) -> bool {
     model.iter().any(|x| x == h)
 }
 
-struct AddProcessor<'a> {
-    lookup_table: &'a LookupTable,
-}
-impl<'a> DeltaProcessor<'a> for AddProcessor<'a> {
-    fn matches(&self, statement: Statement) -> bool {
-        statement.graph == self.lookup_table.get_by_value(String::from(LD_ADD))
-    }
-
-    fn process(
-        &self,
-        _: &HashModel,
-        _: &HashModel,
-        st: Statement,
-    ) -> (HashModel, HashModel, HashModel) {
-        let adds = vec![st];
-        let replaces = Vec::with_capacity(0);
-        let removes = Vec::with_capacity(0);
-
-        (adds, replaces, removes)
-    }
-}
-impl<'a> ProcessorInitializer for AddProcessor<'a> {
-    fn initialize(lookup_table: &mut LookupTable) {
-        lookup_table.ensure_value(&String::from(LD_ADD));
-    }
-}
-
-struct ReplaceProcessor<'a> {
-    lookup_table: &'a LookupTable,
-}
-impl<'a> DeltaProcessor<'a> for ReplaceProcessor<'a> {
-    #[rustfmt::skip]
-    fn matches(&self, statement: Statement) -> bool {
-        let graph = statement.graph;
-
-        graph == self.lookup_table.get_by_value(String::from(LD_REPLACE))
-    }
-
-    fn process(
-        &self,
-        _: &HashModel,
-        _: &HashModel,
-        st: Statement,
-    ) -> (HashModel, HashModel, HashModel) {
-        let replaces = vec![st];
-
-        (Vec::with_capacity(0), replaces, Vec::with_capacity(0))
-    }
-}
-impl<'a> ProcessorInitializer for ReplaceProcessor<'a> {
-    fn initialize(lookup_table: &mut LookupTable) {
-        lookup_table.ensure_value(&String::from(LD_REPLACE));
-    }
-}
-
-struct SupplantProcessor<'a> {
-    lookup_table: &'a LookupTable,
-}
-impl<'a> DeltaProcessor<'a> for SupplantProcessor<'a> {
-    #[rustfmt::skip]
-    fn matches(&self, statement: Statement) -> bool {
-        let graph = statement.graph;
-
-        graph == self.lookup_table.get_by_value(String::from(LD_SUPPLANT))
-            || graph == self.lookup_table.get_by_value(String::from(LL_SUPPLANT))
-    }
-
-    fn process(
-        &self,
-        cur: &HashModel,
-        _: &HashModel,
-        st: Statement,
-    ) -> (HashModel, HashModel, HashModel) {
-        let replaces = vec![st];
-        let removes = cur.clone();
-
-        (Vec::with_capacity(0), replaces, removes)
-    }
-}
-impl<'a> ProcessorInitializer for SupplantProcessor<'a> {
-    fn initialize(lookup_table: &mut LookupTable) {
-        lookup_table.ensure_value(&String::from(LD_SUPPLANT));
-        lookup_table.ensure_value(&String::from(LL_SUPPLANT));
-    }
-}
-
-// struct RemoveProcessor {}
-//
-// struct PurgeProcessor {}
-//
-// struct SliceProcessor {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,7 +145,8 @@ mod tests {
         add_processor_methods_to_table(&mut lookup_table);
         let named_node = lookup_table.ensure_value(&String::from("rdf:namedNode"));
         let string = lookup_table.ensure_value(&String::from(STRING_IRI));
-        let replace = lookup_table.ensure_value(&String::from(LD_REPLACE));
+        let replace =
+            lookup_table.ensure_value(&String::from("http://purl.org/linked-delta/replace"));
 
         let name = lookup_table.ensure_value(&String::from("https://schema.org/name"));
         let homepage = lookup_table.ensure_value(&String::from("https://schema.org/homepage"));

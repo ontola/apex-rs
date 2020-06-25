@@ -6,6 +6,7 @@ extern crate diesel;
 extern crate error_chain;
 
 pub mod db;
+pub mod delta;
 pub mod errors;
 pub mod hashtuple;
 pub mod importing;
