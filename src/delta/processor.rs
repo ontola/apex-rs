@@ -1,5 +1,6 @@
 use crate::delta::delta_processor::DeltaProcessor;
 use crate::delta::processors::add_processor::AddProcessor;
+use crate::delta::processors::invalidate_processor::InvalidateProcessor;
 use crate::delta::processors::replace_processor::ReplaceProcessor;
 use crate::delta::processors::supplant_processor::SupplantProcessor;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
@@ -20,6 +21,7 @@ pub fn default_processors<'a>(
         Box::new(SupplantProcessor::<'a> { lookup_table }),
         Box::new(AddProcessor::<'a> { lookup_table }),
         Box::new(ReplaceProcessor::<'a> { lookup_table }),
+        Box::new(InvalidateProcessor::<'a> { lookup_table }),
         //         RemoveProcessor {},
         //         PurgeProcessor {},
         //         SliceProcessor {},
@@ -30,6 +32,7 @@ pub fn add_processor_methods_to_table(lookup_table: &mut LookupTable) {
     AddProcessor::initialize(lookup_table);
     ReplaceProcessor::initialize(lookup_table);
     SupplantProcessor::initialize(lookup_table);
+    InvalidateProcessor::initialize(lookup_table);
 }
 
 /// FIXME: Be sure to call `add_processor_methods_to_table` on the `lookup_table` beforehand.
