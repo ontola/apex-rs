@@ -10,6 +10,9 @@ use std::env;
 
 pub async fn serve() -> std::io::Result<()> {
     let pool = DbContext::default_pool();
+    let binding = env::var("BINDING").unwrap_or("0.0.0.0".into());
+    let port = env::var("PORT").unwrap_or("3030".into());
+    let address = format!("{}:{}", binding, port);
 
     HttpServer::new(move || {
         let mut app = App::new()
@@ -33,7 +36,7 @@ pub async fn serve() -> std::io::Result<()> {
 
         app
     })
-    .bind("0.0.0.0:3030")?
+    .bind(address)?
     .run()
     .await
 }

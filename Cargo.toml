@@ -18,6 +18,7 @@ dotenv = "0.15.0"
 env_logger = "0.7"
 error-chain = "0.12.2"
 log = "0.4.8"
+rand = "0.7.3"
 rdkafka = { version = "0.23.1", features = ["cmake-build", "ssl", "gssapi"] }
 tokio = { version = "0.2.19", features = ["full"] }
 futures = "0.3.5"

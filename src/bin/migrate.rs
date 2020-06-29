@@ -4,15 +4,17 @@ extern crate dotenv;
 extern crate log;
 
 use apex_rs::db::db_context::DbContext;
-use apex_rs::db::models::{Object, Property};
+use apex_rs::db::models::{ConfigItem, Object, Property};
 use apex_rs::db::schema;
 use apex_rs::db::uu128::Uu128;
 use clap::{App, Arg};
 use diesel::result::Error::RollbackTransaction;
-use diesel::{Connection, QueryDsl, RunQueryDsl};
+use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
 
 /// Tool to run after running a migration which can't/is to bothersome to be expressed in SQL
 fn main() {
+    env_logger::init();
+
     let matches = App::new("Apex migrate")
         .version("1.0")
         .arg(
@@ -26,13 +28,43 @@ fn main() {
         .get_matches();
 
     match matches.value_of("version") {
-        Some(version) => {
-            if version == "2020_05_15_152936" {
-                migrate_2020_05_15_152936();
-            }
+        Some("setup") => {
+            setup();
         }
+        Some("2020_05_15_152936") => {
+            migrate_2020_05_15_152936();
+        }
+        Some(_) => println!("Invalid version"),
         None => println!("Provide a version to run"),
     };
+}
+
+fn setup() {
+    use schema::_apex_config::dsl;
+
+    info!("Running setup");
+
+    let pool = DbContext::default_pool();
+    let seed = dsl::_apex_config
+        .filter(dsl::key.eq("seed"))
+        .load::<ConfigItem>(&pool.get().unwrap());
+
+    match seed {
+        Err(_) => {
+            info!("Adding 'seed' config item");
+            let value = rand::random::<u32>().to_string();
+            diesel::insert_into(dsl::_apex_config)
+                .values(ConfigItem {
+                    key: "seed".into(),
+                    value,
+                })
+                .execute(&pool.get().expect("Can't connect to db"))
+                .expect("Setup seed failed");
+
+            ()
+        }
+        _ => info!("Seed already present, skipping"),
+    }
 }
 
 fn migrate_2020_05_15_152936() {

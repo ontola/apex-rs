@@ -77,6 +77,6 @@ pub async fn import_redis(
 }
 
 fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let client = redis::Client::open(env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into()))?;
     client.get_connection()
 }
