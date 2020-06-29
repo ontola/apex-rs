@@ -48,6 +48,7 @@ pub(crate) struct SPITenantFinderRequest {
 #[derive(Deserialize)]
 pub(crate) struct SPITenantFinderResponse {
     database_schema: String,
+    iri_prefix: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -258,12 +259,12 @@ async fn authorize_resources(
     let request = SPIBulkRequest { resources: &items };
 
     // Find tenant
-    let core_api_url = env::var("ARGU_API_URL").unwrap();
+    let core_api_host = env::var("ARGU_API_URL").unwrap();
     let tenant_req_body = SPITenantFinderRequest {
         iri: website.into(),
     };
     let tenant_res = client
-        .get(format!("{}/_public/spi/find_tenant", core_api_url).as_str())
+        .get(format!("{}/_public/spi/find_tenant", core_api_host).as_str())
         .header(header::USER_AGENT, "Apex/1")
         .send_json(&tenant_req_body)
         .await;
@@ -274,7 +275,10 @@ async fn authorize_resources(
                 .json::<SPITenantFinderResponse>()
                 .await
                 .expect("Error parsing tenant finder response");
-            tenant.database_schema
+            match url::Url::parse(format!("https://{}", tenant.iri_prefix).as_str()) {
+                Ok(iri_prefix) => String::from(iri_prefix.path()),
+                Err(_) => bail!(ErrorKind::NoTenant),
+            }
         }
         StatusCode::NOT_FOUND => {
             bail!(ErrorKind::NoTenant);
@@ -292,7 +296,7 @@ async fn authorize_resources(
 
     // Create request builder and send request
     let mut response = client
-        .post(format!("{}/{}/spi/bulk", core_api_url, tenant_path))
+        .post(format!("{}{}/spi/bulk", core_api_host, tenant_path))
         .header(header::USER_AGENT, "Apex/1")
         .header("X-Forwarded-Proto", "https")
         .header("X-Forwarded-Ssl", "on")
