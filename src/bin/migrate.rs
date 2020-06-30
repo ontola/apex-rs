@@ -2,6 +2,8 @@ extern crate apex_rs;
 extern crate dotenv;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate diesel_migrations;
 
 use apex_rs::db::db_context::DbContext;
 use apex_rs::db::models::{ConfigItem, Object, Property};
@@ -10,6 +12,8 @@ use apex_rs::db::uu128::Uu128;
 use clap::{App, Arg};
 use diesel::result::Error::RollbackTransaction;
 use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
+
+embed_migrations!("./migrations");
 
 /// Tool to run after running a migration which can't/is to bothersome to be expressed in SQL
 fn main() {
@@ -45,6 +49,15 @@ fn setup() {
     info!("Running setup");
 
     let pool = DbContext::default_pool();
+
+    match embedded_migrations::run_with_output(
+        &pool.get().expect("Can't connect to db"),
+        &mut std::io::stdout(),
+    ) {
+        Ok(_) => info!("Migrations succeeded"),
+        Err(e) => error!("Migrations failed: {}", e),
+    }
+
     let seed = dsl::_apex_config
         .filter(dsl::key.eq("seed"))
         .load::<ConfigItem>(&pool.get().unwrap());
