@@ -1,19 +1,20 @@
 use crate::serving::response_type::ResponseType::JSONLD;
 use crate::serving::responses::set_default_headers;
+use crate::serving::ua::basic_ua;
 use actix_web::{get, HttpResponse, Responder};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
-struct Envelope {
+struct Envelope<'a> {
     /// The name of the service
     #[serde(borrow)]
-    name: &'static str,
+    name: &'a str,
     /// The operators the service supports
     #[serde(borrow)]
-    operators: Vec<&'static str>,
+    operators: Vec<&'a str>,
     /// The operator arguments the service supports
     #[serde(borrow)]
-    arguments: Vec<&'static str>,
+    arguments: Vec<&'a str>,
     /// The endpoints of the service
     endpoints: EndpointMap,
 }
@@ -85,7 +86,7 @@ pub(crate) async fn service_info<'a>() -> impl Responder {
         n3: false,
     };
 
-    let name = "Apex/1";
+    let name = basic_ua();
     let operators = vec![
         "http://purl.org/linked-delta/add",
         "http://purl.org/linked-delta/replace",
@@ -123,7 +124,7 @@ pub(crate) async fn service_info<'a>() -> impl Responder {
     };
 
     let body = Envelope {
-        name,
+        name: &name,
         operators,
         arguments,
         endpoints,

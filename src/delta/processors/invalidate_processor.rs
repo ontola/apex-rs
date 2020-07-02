@@ -1,6 +1,5 @@
 use crate::delta::delta_processor::DeltaProcessor;
 use crate::delta::processor::ProcessorInitializer;
-use crate::errors::ErrorKind;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 
 const ONT_INVALIDATE: &str = "https://ns.ontola.io/invalidate";

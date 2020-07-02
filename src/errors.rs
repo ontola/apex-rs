@@ -6,6 +6,8 @@ error_chain! {
             description("Unexpected error occured")
         }
 
+        Timeout
+
         NoTenant
 
         NoResources

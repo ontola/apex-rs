@@ -12,8 +12,9 @@ use crate::serving::responses::set_default_headers;
 use crate::serving::serialization::{
     bulk_result_to_hextuples, bulk_result_to_nquads, bulk_result_to_ntriples,
 };
+use crate::serving::ua::bulk_ua;
 use actix_http::error::BlockingError;
-use actix_web::client::Client;
+use actix_web::client::{Client, ClientRequest, SendRequestError};
 use actix_web::http::{header, StatusCode};
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
@@ -208,6 +209,37 @@ fn status_code_statement(lookup_table: &mut LookupTable, iri: &str, status: i16)
     }
 }
 
+trait HeaderCopy {
+    fn copy_header_from(
+        self,
+        header: &str,
+        from: &actix_web::HttpRequest,
+        default: Option<&str>,
+    ) -> Self;
+}
+
+impl HeaderCopy for ClientRequest {
+    fn copy_header_from(
+        self,
+        header: &str,
+        from: &actix_web::HttpRequest,
+        default: Option<&str>,
+    ) -> Self {
+        let value = from.headers().get(header);
+
+        match value {
+            Some(value) => match value.to_str() {
+                Ok(value) => self.header(header, value),
+                Err(_) => self,
+            },
+            None => match default {
+                Some(value) => self.header(header, value),
+                None => self,
+            },
+        }
+    }
+}
+
 async fn authorize_resources(
     req: &actix_web::HttpRequest,
     resources: &Vec<String>,
@@ -237,9 +269,6 @@ async fn authorize_resources(
     };
     debug!("Using website: {}", website);
 
-    let forward_for = req.headers().get("x-forwarded-for");
-    let forward_host = req.headers().get("x-forwarded-host");
-
     let mut included: i32 = 0;
     let items = resources
         .into_iter()
@@ -256,7 +285,7 @@ async fn authorize_resources(
         .collect();
     let total = resources.len() as i32;
     debug!("Documents; {} to authorize, {} to include", total, included);
-    let request = SPIBulkRequest { resources: &items };
+    let request_body = SPIBulkRequest { resources: &items };
 
     // Find tenant
     let core_api_host = env::var("ARGU_API_URL").unwrap();
@@ -265,7 +294,8 @@ async fn authorize_resources(
     };
     let tenant_res = client
         .get(format!("{}/_public/spi/find_tenant", core_api_host).as_str())
-        .header(header::USER_AGENT, "Apex/1")
+        .header(header::USER_AGENT, bulk_ua())
+        .copy_header_from("X-Request-Id", &req, None)
         .send_json(&tenant_req_body)
         .await;
     let mut tenant_res = tenant_res.expect("Error finding tenant");
@@ -276,7 +306,10 @@ async fn authorize_resources(
                 .await
                 .expect("Error parsing tenant finder response");
             match url::Url::parse(format!("https://{}", tenant.iri_prefix).as_str()) {
-                Ok(iri_prefix) => String::from(iri_prefix.path()),
+                Ok(iri_prefix) => match iri_prefix.path() {
+                    "/" => String::from(""),
+                    path => String::from(path),
+                },
                 Err(_) => bail!(ErrorKind::NoTenant),
             }
         }
@@ -295,35 +328,40 @@ async fn authorize_resources(
         .map(|s| s.to_str().unwrap());
 
     // Create request builder and send request
-    let mut response = client
+    let mut backend_req = client
         .post(format!("{}{}/spi/bulk", core_api_host, tenant_path))
-        .header(header::USER_AGENT, "Apex/1")
+        .timeout(Duration::from_secs(20))
         .header("X-Forwarded-Proto", "https")
-        .header("X-Forwarded-Ssl", "on")
         .header("Website-IRI", website);
 
-    if auth.is_some() {
-        response = response.header(header::AUTHORIZATION, auth.unwrap())
+    if let Some(auth) = auth {
+        backend_req = backend_req.header(header::AUTHORIZATION, auth)
     }
 
-    let response = match forward_for {
-        Some(forward_for) => match forward_for.to_str() {
-            Ok(forward_for) => response.header("X-Forwarded-For", forward_for),
-            Err(_) => response,
-        },
-        None => response,
-    };
-    let response = match forward_host {
-        Some(forward_host) => match forward_host.to_str() {
-            Ok(forward_host) => response.header("X-Forwarded-Host", forward_host),
-            Err(_) => response,
-        },
-        None => response,
-    };
+    let backend_req = backend_req
+        .copy_header_from("Accept-Language", req, None)
+        .copy_header_from("Origin", req, None)
+        .copy_header_from("Referer", req, None)
+        .copy_header_from("User-Agent", req, Some(&bulk_ua()))
+        .copy_header_from("X-Forwarded-Host", req, None)
+        .copy_header_from("X-Forwarded-Ssl", req, Some("on".into()))
+        .copy_header_from("X-Real-Ip", req, None)
+        .copy_header_from("X-Requested-With", req, None)
+        .copy_header_from("X-Device-Id", req, None)
+        .copy_header_from("X-Request-Id", req, None)
+        .copy_header_from("X-Forwarded-For", req, None)
+        .copy_header_from("X-Client-Ip", req, None)
+        .copy_header_from("Client-Ip", req, None)
+        .copy_header_from("Host", req, None)
+        .copy_header_from("Forwarded", req, None);
 
-    let response = response.send_json(&request).await;
+    let response = backend_req.send_json(&request_body).await;
 
     match response {
+        Err(SendRequestError::Timeout) => {
+            debug!(target: "apex", "Timeout waiting for sending bulk authorize");
+            Err(ErrorKind::Timeout)
+        }
         Err(e) => {
             debug!(target: "apex", "Unexpected error sending bulk authorize: {}", e);
             Err(ErrorKind::Unexpected)
