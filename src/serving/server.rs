@@ -5,8 +5,11 @@ use crate::serving::hpf::{hpf, tpf};
 use crate::serving::service_info::service_info;
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use crate::serving::update::update;
+use actix_http::http::{HeaderName, HeaderValue};
+use actix_web::dev::Service;
 use actix_web::{middleware, App, HttpServer};
 use std::env;
+use uuid::Uuid;
 
 pub async fn serve() -> std::io::Result<()> {
     let pool = DbContext::default_pool();
@@ -17,7 +20,29 @@ pub async fn serve() -> std::io::Result<()> {
     HttpServer::new(move || {
         let mut app = App::new()
             .data(pool.clone())
-            .wrap(middleware::Logger::default())
+            .wrap(middleware::Logger::new(
+                r#"[%{X-Request-Id}i] %a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
+            ))
+            .wrap_fn(|mut req, srv| {
+                let req = match req.headers().get("X-Request-Id") {
+                    Some(_) => req,
+                    None => {
+                        let id = Uuid::new_v4().to_hyphenated().to_string();
+
+                        req.headers_mut().insert(
+                            HeaderName::from_static("x-request-id"),
+                            HeaderValue::from_str(id.as_str()).unwrap(),
+                        );
+                        req
+                    }
+                };
+
+                let fut = srv.call(req);
+                async {
+                    let res = fut.await?;
+                    Ok(res)
+                }
+            })
             .wrap(middleware::Compress::default())
             .service(favicon)
             .service(bulk)
