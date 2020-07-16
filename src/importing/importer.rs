@@ -1,5 +1,5 @@
 use crate::db::db_context::DbContext;
-use crate::db::document::reset_document;
+use crate::db::document::{delete_all_document_data, reset_document};
 use crate::db::properties::insert_properties;
 use crate::db::resources::insert_resources;
 use crate::delta::processor::{add_processor_methods_to_table, apply_delta};
@@ -29,6 +29,27 @@ pub(crate) async fn process_message(
             }
             Err(e) => {
                 result = Err(e);
+                Err(RollbackTransaction)
+            }
+        });
+
+    result
+}
+
+#[allow(unused_must_use)]
+pub(crate) async fn process_invalidate(
+    ctx: &mut DbContext<'_>,
+) -> Result<MessageTiming, ErrorKind> {
+    debug!(target: "apex", "Invalidating all data");
+    let mut result: Result<MessageTiming, ErrorKind> = Err(ErrorKind::Unexpected);
+
+    ctx.db_pool
+        .get()
+        .unwrap()
+        .transaction(|| match delete_all_document_data(&ctx.get_conn()) {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                result = Err(ErrorKind::Unexpected);
                 Err(RollbackTransaction)
             }
         });

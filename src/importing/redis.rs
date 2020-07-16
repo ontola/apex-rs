@@ -1,8 +1,8 @@
 use crate::db::db_context::DbContext;
 use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
-use crate::importing::importer::process_message;
-use crate::importing::parsing::parse_hndjson;
+use crate::importing::importer::{process_invalidate, process_message};
+use crate::importing::parsing::{parse_hndjson, DocumentSet};
 use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
@@ -41,13 +41,21 @@ pub async fn import_redis(
                     }
                     Ok(p) => {
                         let report = match parse_hndjson(&mut ctx.lookup_table, p.as_slice()) {
-                            Ok(model) => match process_message(&mut ctx, model).await {
-                                Ok(timing) => Ok(MessageTiming {
-                                    poll_time: msg_poll_time,
-                                    ..timing
-                                }),
-                                Err(e) => Err(e),
-                            },
+                            Ok(model) => {
+                                let result = if is_invalidate_cmd(&mut ctx, &model) {
+                                    process_invalidate(&mut ctx).await
+                                } else {
+                                    process_message(&mut ctx, model).await
+                                };
+
+                                match result {
+                                    Ok(timing) => Ok(MessageTiming {
+                                        poll_time: msg_poll_time,
+                                        ..timing
+                                    }),
+                                    Err(e) => Err(e),
+                                }
+                            }
                             Err(e) => {
                                 error!(target: "apex", "Unexpected error: {}", e.description());
                                 Err(e)
@@ -79,4 +87,28 @@ pub async fn import_redis(
 fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
     let client = redis::Client::open(env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into()))?;
     client.get_connection()
+}
+
+fn is_invalidate_cmd(ctx: &mut DbContext, model: &DocumentSet) -> bool {
+    if model.len() > 1 {
+        return false;
+    }
+
+    let var = model.get("http://spinrdf.org/sp#Variable");
+    if var.is_none() || var.unwrap().len() != 1 {
+        return false;
+    }
+
+    let var_uu128 = ctx
+        .lookup_table
+        .ensure_value("http://spinrdf.org/sp#Variable");
+    let inval_uu128 = ctx
+        .lookup_table
+        .ensure_value("https://ns.ontola.io/core#invalidate");
+    let q = var.unwrap().get(0).unwrap();
+
+    q.subject == var_uu128
+        && q.predicate == var_uu128
+        && q.value == var_uu128
+        && q.graph == inval_uu128
 }

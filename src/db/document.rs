@@ -109,6 +109,10 @@ pub(crate) fn update_cache_control(db_conn: &PgConnection, docs: &Vec<crate::mod
     }
 }
 
+pub(crate) fn delete_all_document_data(db_conn: &PgConnection) -> QueryResult<usize> {
+    db_conn.execute("TRUNCATE TABLE documents CASCADE")
+}
+
 fn delete_document_data(db_conn: &PgConnection, doc_iri: &str) -> i64 {
     use schema::documents;
     use schema::properties;

@@ -2,7 +2,7 @@ use crate::delta::delta_processor::DeltaProcessor;
 use crate::delta::processor::ProcessorInitializer;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 
-const ONT_INVALIDATE: &str = "https://ns.ontola.io/invalidate";
+const ONT_INVALIDATE: &str = "https://ns.ontola.io/core#invalidate";
 
 pub struct InvalidateProcessor<'a> {
     pub(crate) lookup_table: &'a LookupTable,
