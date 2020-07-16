@@ -10,6 +10,7 @@ pub mod delta;
 pub mod errors;
 pub mod hashtuple;
 pub mod importing;
+pub mod models;
 pub mod rdf;
 pub mod reporting;
 pub mod serving;

@@ -7,6 +7,7 @@ use crate::hashtuple::{HashModel, Statement};
 use diesel::debug_query;
 use diesel::pg::Pg;
 use diesel::prelude::*;
+use itertools::Itertools;
 
 pub fn doc_by_iri<'a>(
     mut ctx: &'a mut DbContext,
@@ -91,6 +92,20 @@ pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Docu
             delete_document_data(&ctx.get_conn(), iri);
             model
         }
+    }
+}
+
+pub(crate) fn update_cache_control(db_conn: &PgConnection, docs: &Vec<crate::models::Document>) {
+    use schema::documents::dsl::*;
+
+    for (cc, group) in &docs.into_iter().group_by(|d| d.cache_control) {
+        let iris = group.map(|d| d.iri.clone()).collect::<Vec<String>>();
+        let docs = documents.filter(iri.eq_any(iris));
+
+        diesel::update(docs)
+            .set(cache_control.eq(i16::from(cc)))
+            .execute(db_conn)
+            .unwrap();
     }
 }
 

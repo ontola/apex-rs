@@ -24,6 +24,16 @@ impl From<i16> for CacheControl {
     }
 }
 
+impl From<CacheControl> for i16 {
+    fn from(v: CacheControl) -> Self {
+        match v {
+            CacheControl::Private => 0,
+            CacheControl::NoCache => 1,
+            CacheControl::Public => 2,
+        }
+    }
+}
+
 impl From<&CacheControl> for String {
     fn from(v: &CacheControl) -> Self {
         match v {

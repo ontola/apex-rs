@@ -1,10 +1,11 @@
 use crate::db::cache_control::CacheControl;
 use crate::db::db_context::{DbContext, DbPool};
-use crate::db::document::doc_by_iri;
+use crate::db::document::{doc_by_iri, update_cache_control};
 use crate::errors::ErrorKind;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::importer::process_message;
-use crate::importing::parsing::{parse_hndjson, DocumentSet};
+use crate::importing::parsing::parse_hndjson;
+use crate::models::Document;
 use crate::rdf::iri_utils::stem_iri;
 use crate::reporting::reporter::humanize;
 use crate::serving::response_type::{ResponseType, NQUADS_MIME, NTRIPLES_MIME};
@@ -519,7 +520,12 @@ async fn process_non_public_and_missing(
         let body = r.body.as_ref().unwrap();
         match parse_hndjson(&mut lookup_table, body.as_ref()) {
             Ok(data) => {
-                uncached_and_included_documents.push(data);
+                uncached_and_included_documents.push(Document {
+                    iri: r.iri.clone(),
+                    status: r.status,
+                    cache_control: r.cache,
+                    data,
+                });
             }
             Err(e) => {
                 debug!(target: "apex", "Error while processing bulk request {}", e);
@@ -531,7 +537,7 @@ async fn process_non_public_and_missing(
     let authorize_parse_end = Instant::now();
     let authorize_parse_time = authorize_parse_end.duration_since(authorize_fetch_end);
 
-    let uncached_and_cacheable: Vec<DocumentSet> = uncached_and_included
+    let uncached_and_cacheable: Vec<Document> = uncached_and_included
         .iter()
         .enumerate()
         .filter(|(_, r)| r.cache != CacheControl::Private)
@@ -544,19 +550,21 @@ async fn process_non_public_and_missing(
         let mut ctx = DbContext::new(&pl);
         ctx.lookup_table = lookup_table;
 
-        for r in uncached_and_cacheable {
-            if let Err(e) = process_message(&mut ctx, r.clone()).await {
+        for r in &uncached_and_cacheable {
+            if let Err(e) = process_message(&mut ctx, r.data.clone()).await {
                 error!(target: "apex", "Error writing resource to database: {}", e);
                 return Err(HttpResponse::InternalServerError().finish());
             }
         }
+
+        update_cache_control(&ctx.get_conn(), &uncached_and_cacheable);
 
         lookup_table = ctx.lookup_table
     }
     let authorize_process_end = Instant::now();
     let authorize_process_time = authorize_process_end.duration_since(authorize_process_end);
 
-    for (n, docset) in uncached_and_included_documents.iter().enumerate() {
+    for (n, docset) in uncached_and_included_documents.into_iter().enumerate() {
         let document = uncached_and_included.get(n).unwrap();
         trace!(target: "apex", "Including uncached document: {} as status {}", document.iri, document.status);
         // TODO: handle redirects / responses without included identity resource?
@@ -567,7 +575,7 @@ async fn process_non_public_and_missing(
             data: Vec::with_capacity(0),
         });
 
-        for (iri, data) in docset {
+        for (iri, data) in docset.data {
             trace!(target: "apex", "|- including uncached resource: {} as status {}", iri, document.status);
             bulk_docs.push(Resource {
                 iri: iri.clone(),
