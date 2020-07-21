@@ -36,5 +36,10 @@ error_chain! {
         Commit {
             description("Failed to commit message after processing")
         }
+
+        SecurityError(t: String) {
+            description("Security error")
+            display("Security error: {}", t)
+        }
     }
 }
