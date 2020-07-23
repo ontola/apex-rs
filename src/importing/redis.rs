@@ -3,6 +3,7 @@ use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
 use crate::importing::importer::{process_invalidate, process_message};
 use crate::importing::parsing::{parse_hndjson, DocumentSet};
+use log::Level;
 use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
@@ -40,6 +41,12 @@ pub async fn import_redis(
                         continue;
                     }
                     Ok(p) => {
+                        if log_enabled!(Level::Trace) {
+                            trace!(
+                                "Recieved message:\n >>>>>{}<<<<<",
+                                String::from_utf8(p.clone()).expect("Invalid message")
+                            );
+                        }
                         let report = match parse_hndjson(&mut ctx.lookup_table, p.as_slice()) {
                             Ok(model) => {
                                 let result = if is_invalidate_cmd(&mut ctx, &model) {
