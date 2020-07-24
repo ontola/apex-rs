@@ -1,10 +1,10 @@
 use crate::db::cache_control::CacheControl;
-use crate::importing::parsing::DocumentSet;
+use crate::hashtuple::HashModel;
 
 #[derive(Clone)]
 pub(crate) struct Document {
     pub iri: String,
     pub status: i16,
     pub cache_control: CacheControl,
-    pub data: DocumentSet,
+    pub data: HashModel,
 }

@@ -4,7 +4,7 @@ use crate::db::document::{doc_by_iri, update_cache_control};
 use crate::errors::ErrorKind;
 use crate::hashtuple::{HashModel, LookupTable, Statement};
 use crate::importing::importer::process_message;
-use crate::importing::parsing::parse_hndjson;
+use crate::importing::parsing::{parse_hndjson, DocumentSet};
 use crate::models::Document;
 use crate::rdf::iri_utils::stem_iri;
 use crate::reporting::reporter::humanize;
@@ -387,7 +387,7 @@ async fn process_private_and_missing(
                     iri: r.iri.clone(),
                     status: r.status,
                     cache_control: r.cache,
-                    data,
+                    data: docset_to_model(data),
                 });
             }
             Err(e) => {
@@ -413,8 +413,9 @@ async fn process_private_and_missing(
         let mut ctx = DbContext::new(&pl);
         ctx.lookup_table = lookup_table;
 
-        for r in &unstored_and_storable {
-            if let Err(e) = process_message(&mut ctx, r.data.clone()).await {
+        for doc in &unstored_and_storable {
+            let docset = document_to_docset(doc);
+            if let Err(e) = process_message(&mut ctx, docset).await {
                 error!(target: "apex", "Error writing resource to database: {}", e);
                 return Err(HttpResponse::InternalServerError().finish());
             }
@@ -427,28 +428,15 @@ async fn process_private_and_missing(
     let authorize_process_end = Instant::now();
     let authorize_process_time = authorize_process_end.duration_since(authorize_process_end);
 
-    for (n, docset) in unstored_and_included_documents.into_iter().enumerate() {
-        let document = unstored_and_included.get(n).unwrap();
+    for document in unstored_and_included_documents.into_iter() {
         trace!(target: "apex", "Including unstored document: {} as status {}", document.iri, document.status);
-        // TODO: handle redirects / responses without included identity resource?
         update_or_insert_doc(
             bulk_docs,
             document.iri.as_str(),
             document.status,
-            document.cache,
-            Vec::with_capacity(0),
+            document.cache_control,
+            document.data,
         );
-
-        for (iri, data) in docset.data {
-            trace!(target: "apex", "|- including unstored resource: {} as status {}", iri, document.status);
-            update_or_insert_doc(
-                bulk_docs,
-                iri.as_str(),
-                document.status,
-                document.cache,
-                data.to_vec(),
-            );
-        }
     }
     let authorize_finish_end = Instant::now();
     let authorize_finish_time = authorize_finish_end.duration_since(authorize_process_end);
@@ -461,6 +449,20 @@ async fn process_private_and_missing(
     };
 
     Ok((lookup_table, timing))
+}
+
+fn document_to_docset(doc: &Document) -> DocumentSet {
+    let mut docset = DocumentSet::new();
+    docset.insert(doc.iri.clone(), doc.data.clone());
+    docset
+}
+
+fn docset_to_model(docset: DocumentSet) -> HashModel {
+    let mut data = Vec::new();
+    for mut doc in docset {
+        data.append(&mut doc.1);
+    }
+    data
 }
 
 fn update_or_insert_doc(
