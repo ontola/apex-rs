@@ -1,5 +1,12 @@
 image: rust:latest
 
+cache:
+  paths:
+    - target/
+    - $CARGO_HOME/registry/index/
+    - $CARGO_HOME/registry/cache/
+    - $CARGO_HOME/git/db/
+
 build:
   stage: build
   image: docker:18.09.8
