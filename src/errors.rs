@@ -3,7 +3,7 @@ error_chain! {
         ToDo
 
         Unexpected {
-            description("Unexpected error occured")
+            description("Unexpected error occurred")
         }
 
         Timeout

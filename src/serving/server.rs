@@ -1,3 +1,4 @@
+use crate::app_config::AppConfig;
 use crate::db::db_context::DbContext;
 use crate::serving::assets::favicon;
 use crate::serving::bulk::bulk;
@@ -9,17 +10,20 @@ use crate::serving::update::update;
 use actix_http::http::{HeaderName, HeaderValue};
 use actix_web::dev::Service;
 use actix_web::{middleware, App, HttpServer};
-use std::env;
 use uuid::Uuid;
 
+fn get_app_config() -> AppConfig {
+    AppConfig::default()
+}
+
 pub async fn serve() -> std::io::Result<()> {
+    let config = get_app_config();
     let pool = DbContext::default_pool();
-    let binding = env::var("BINDING").unwrap_or("0.0.0.0".into());
-    let port = env::var("PORT").unwrap_or("3030".into());
-    let address = format!("{}:{}", binding, port);
+    let address = format!("{}:{}", config.binding, config.port);
 
     HttpServer::new(move || {
         let mut app = App::new()
+            .data(config.clone())
             .data(pool.clone())
             .wrap(middleware::Logger::new(
                 r#"[%{X-Request-Id}i] %a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
@@ -55,9 +59,7 @@ pub async fn serve() -> std::io::Result<()> {
             .service(show_resource_ext)
             .service(show_resource);
 
-        let enable_unsafe =
-            env::var("ENABLE_UNSAFE_METHODS").unwrap_or_else(|_| String::from("false"));
-        if enable_unsafe == "true" {
+        if config.enable_unsafe_methods {
             app = app.service(update);
         }
 

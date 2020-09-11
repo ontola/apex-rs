@@ -5,6 +5,7 @@ extern crate diesel;
 #[macro_use]
 extern crate error_chain;
 
+pub mod app_config;
 pub mod db;
 pub mod delta;
 pub mod errors;

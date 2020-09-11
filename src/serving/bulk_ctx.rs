@@ -55,15 +55,14 @@ impl BulkCtx {
     }
 
     pub(crate) async fn setup_proxy_request(&mut self) -> Result<ClientRequest, ErrorKind> {
-        let core_api_host = env::var("ARGU_API_URL").unwrap();
         let client = Client::default();
         let mut backend_req = client
             .post(format!(
                 "{}{}/spi/bulk",
-                core_api_host,
+                self.config.data_server_url.clone(),
                 self.tenant_path().await?
             ))
-            .timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(self.config.data_server_timeout.clone()))
             .header("Website-IRI", self.website()?);
 
         let auth = self
