@@ -1,6 +1,7 @@
 mod assets;
 mod bulk;
 mod bulk_ctx;
+mod health;
 mod hpf;
 mod request_headers;
 mod response_type;

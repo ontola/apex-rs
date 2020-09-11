@@ -1,5 +1,6 @@
 use crate::db::models::{ConfigItem, Datatype, Language, Predicate};
 use crate::db::schema;
+use crate::db::schema::documents::dsl::documents;
 use crate::db::schema::languages::dsl::languages;
 use crate::hashtuple::LookupTable;
 use bimap::{BiHashMap, BiMap};
@@ -19,6 +20,10 @@ pub struct DbContext<'a> {
     pub language_map: IRIMapping,
     pub resource_map: BiMap<String, i64>,
     pub lookup_table: LookupTable,
+}
+
+pub struct DbCounts {
+    pub documents: i64,
 }
 
 pub struct Config {
@@ -59,6 +64,23 @@ impl<'a> DbContext<'a> {
 
     pub fn default_pool() -> DbPool {
         DbContext::custom_pool(env::var("DATABASE_URL").unwrap().as_str())
+    }
+
+    pub fn est_counts(&self) -> DbCounts {
+        let conn = self.get_conn();
+
+        let documents_est = self.count_table(&conn, "documents");
+
+        DbCounts {
+            documents: documents_est,
+        }
+    }
+
+    fn count_table(&self, conn: &PgConnection, _todo_table_name: &str) -> i64 {
+        match documents.select(diesel::dsl::count_star()).first(conn) {
+            Ok(v) => v,
+            Err(_) => -1,
+        }
     }
 }
 
