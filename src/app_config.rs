@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub data_server_timeout: u64,
     /// The url of the server to retrieve the data from
     pub data_server_url: String,
+    /// Controls whether persistent storage is used for data.
+    pub disable_persistence: bool,
     /// Enable to allow write commands via the HTTP interface
     pub enable_unsafe_methods: bool,
     pub jwt_encryption_token: Option<String>,
@@ -38,6 +40,9 @@ impl Default for AppConfig {
                 .or_else(|_| env::var("LIBRO_APP_SECRET"))
                 .ok(),
             jwt_encryption_token: env::var("JWT_ENCRYPTION_TOKEN").ok(),
+            disable_persistence: env::var("DISABLE_PERSISTENCE")
+                .and_then(|v| Ok(v == "true".to_string()))
+                .unwrap_or_else(|_| false),
             enable_unsafe_methods: env::var("ENABLE_UNSAFE_METHODS")
                 .and_then(|v| Ok(v == "true".to_string()))
                 .unwrap_or_else(|_| false),

@@ -138,10 +138,11 @@ pub(crate) async fn bulk<'a>(
     let parse_end = Instant::now();
     let parse_time = parse_end.duration_since(parse_start);
 
-    let (mut bulk_docs, mut lookup_table) = match lookup_resources(pl, bulk_resources).await {
-        Ok(res) => (res.0, res.1),
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+    let (mut bulk_docs, mut lookup_table) =
+        match lookup_resources(req.config.disable_persistence, pl, bulk_resources).await {
+            Ok(res) => (res.0, res.1),
+            Err(_) => return HttpResponse::InternalServerError().finish(),
+        };
     let lookup_end = Instant::now();
     let lookup_time = lookup_end.duration_since(parse_end);
 
@@ -344,34 +345,46 @@ fn log_report(timing: BulkTiming) {
 }
 
 async fn lookup_resources(
+    disable_persistence: bool,
     pl: Arc<DbPool>,
     bulk_resources: Vec<String>,
 ) -> Result<(Vec<Resource>, LookupTable), BlockingError<i32>> {
     web::block(move || -> Result<(Vec<Resource>, LookupTable), i32> {
         let mut ctx = DbContext::new(&pl);
-        let models: Vec<Resource> = bulk_resources
-            .into_iter()
-            .map(stem_iri)
-            .map(|iri| {
-                if let Ok((doc, data)) = doc_by_iri(&mut ctx, &iri) {
-                    trace!("Load success: {}", iri);
-                    Resource {
-                        iri,
-                        status: if data.is_empty() { 204 } else { 200 },
-                        cache_control: doc.cache_control.into(),
-                        data,
+        let resources = bulk_resources.into_iter().map(stem_iri);
+
+        let models: Vec<Resource> = if disable_persistence {
+            resources
+                .map(|iri| Resource {
+                    iri,
+                    status: 404,
+                    cache_control: CacheControl::Private,
+                    data: HashModel::new(),
+                })
+                .collect()
+        } else {
+            resources
+                .map(|iri| {
+                    if let Ok((doc, data)) = doc_by_iri(&mut ctx, &iri) {
+                        trace!("Load success: {}", iri);
+                        Resource {
+                            iri,
+                            status: if data.is_empty() { 204 } else { 200 },
+                            cache_control: doc.cache_control.into(),
+                            data,
+                        }
+                    } else {
+                        trace!("Load failed: {}", iri);
+                        Resource {
+                            iri,
+                            status: 404,
+                            cache_control: CacheControl::Private,
+                            data: HashModel::new(),
+                        }
                     }
-                } else {
-                    trace!("Load failed: {}", iri);
-                    Resource {
-                        iri,
-                        status: 404,
-                        cache_control: CacheControl::Private,
-                        data: HashModel::new(),
-                    }
-                }
-            })
-            .collect();
+                })
+                .collect()
+        };
 
         Ok((models, ctx.lookup_table))
     })
@@ -452,7 +465,7 @@ async fn process_private_and_missing(
         .map(|(n, _)| unstored_and_included_documents.get(n).unwrap().clone())
         .collect();
 
-    if !unstored_and_storable.is_empty() {
+    if !req.config.disable_persistence && !unstored_and_storable.is_empty() {
         trace!(target: "apex", "Storing {} new resources", unstored_and_storable.len());
         let pl = pool.into_inner();
         let mut ctx = DbContext::new(&pl);

@@ -66,7 +66,7 @@ pub async fn serve() -> std::io::Result<()> {
     let address = format!("{}:{}", config.binding, config.port);
 
     HttpServer::new(move || {
-        let mut app = App::new()
+        let app = App::new()
             .data(config.clone())
             .data(pool.clone())
             .wrap(middleware::Logger::new(
@@ -96,9 +96,15 @@ pub async fn serve() -> std::io::Result<()> {
             .service(favicon)
             .service(bulk)
             .service(health)
-            .service(service_info)
-            .service(tpf)
-            .service(hpf)
+            .service(service_info);
+
+        let app = if !config.disable_persistence {
+            app.service(tpf).service(hpf)
+        } else {
+            app
+        };
+
+        let mut app = app
             .service(random_resource)
             .service(show_resource_ext)
             .service(show_resource);
