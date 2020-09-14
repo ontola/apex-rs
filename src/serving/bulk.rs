@@ -1,3 +1,4 @@
+use crate::app_config::AppConfig;
 use crate::db::cache_control::CacheControl;
 use crate::db::db_context::{DbContext, DbPool};
 use crate::db::document::{doc_by_iri, update_cache_control};
@@ -19,6 +20,7 @@ use actix_web::client::SendRequestError;
 use actix_web::http::header;
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use log::Level;
 use percent_encoding::percent_decode_str;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -59,6 +61,20 @@ pub(crate) struct SPIResourceResponseItem {
     body: Option<String>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct RefreshTokenRequest {
+    pub client_id: String,
+    pub client_secret: String,
+    pub grant_type: String,
+    pub refresh_token: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RefreshTokenResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+}
+
 pub(crate) struct Resource {
     iri: String,
     status: i16,
@@ -93,13 +109,14 @@ struct AuthorizeTiming {
 pub(crate) async fn bulk<'a>(
     req: actix_web::HttpRequest,
     pool: web::Data<DbPool>,
+    config: web::Data<AppConfig>,
     payload: web::Payload,
 ) -> impl Responder {
     let parse_start = Instant::now();
 
     let pl = pool.clone().into_inner();
 
-    let mut req = BulkCtx::new(req);
+    let mut req = BulkCtx::new(req, config);
 
     let resources = match parse_request(payload).await {
         Ok(resources) => resources,
@@ -107,6 +124,9 @@ pub(crate) async fn bulk<'a>(
     };
 
     debug!(target: "apex", "Requested {} resources", resources.len());
+    if log_enabled!(Level::Trace) {
+        trace!(target: "apex", "Resources requested: {}", resources.clone().join(", "));
+    }
     let bulk_resources = resources.clone();
 
     let parse_end = Instant::now();
@@ -120,6 +140,8 @@ pub(crate) async fn bulk<'a>(
     let lookup_time = lookup_end.duration_since(parse_end);
 
     let (resources_in_store, private_or_missing) = sort(resources, &mut bulk_docs);
+
+    trace!(target: "apex", "Resources in store: {}, missing: {}", &resources_in_store.join(", "), &private_or_missing.join(", "));
 
     let sort_end = Instant::now();
     let sort_time = sort_end.duration_since(lookup_end);
@@ -314,6 +336,7 @@ async fn lookup_resources(
             .map(stem_iri)
             .map(|iri| {
                 if let Ok((doc, data)) = doc_by_iri(&mut ctx, &iri) {
+                    trace!("Load success: {}", iri);
                     Resource {
                         iri,
                         status: if data.is_empty() { 204 } else { 200 },
@@ -359,6 +382,9 @@ async fn process_private_and_missing(
                 debug!(target: "apex", "Error while authorizing: {}", msg);
                 return Err(HttpResponse::BadRequest().finish());
             }
+            Err(ErrorKind::BackendUnavailable) => {
+                return Err(HttpResponse::BadGateway().finish());
+            }
             Err(err) => {
                 error!(target: "apex", "Unexpected error while authorizing: {}", err);
                 return Err(HttpResponse::InternalServerError().finish());
@@ -383,6 +409,7 @@ async fn process_private_and_missing(
         let body = r.body.as_ref().unwrap();
         match parse_hndjson(&mut lookup_table, body.as_ref()) {
             Ok(data) => {
+                trace!(target: "apex", "parsed: {}", r.iri);
                 unstored_and_included_documents.push(Document {
                     iri: r.iri.clone(),
                     status: r.status,
@@ -414,6 +441,7 @@ async fn process_private_and_missing(
         ctx.lookup_table = lookup_table;
 
         for doc in &unstored_and_storable {
+            trace!(target: "apex", "Storing {} with cache control {}", doc.iri, doc.cache_control);
             let docset = document_to_docset(doc);
             if let Err(e) = process_message(&mut ctx, docset).await {
                 error!(target: "apex", "Error writing resource to database: {}", e);

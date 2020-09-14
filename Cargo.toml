@@ -17,8 +17,9 @@ diesel = { version = "1.4.5", features = ["chrono", "postgres", "r2d2", "uuidv07
 diesel_migrations = "1.4.0"
 dotenv = "0.15.0"
 env_logger = "0.7"
-error-chain = "0.12.2"
+error-chain = "0.12.4"
 itertools = "0.9.0"
+jsonwebtoken = "7.2.0"
 log = "0.4.8"
 rand = "0.7.3"
 rdkafka = { version = "0.23.1", features = ["cmake-build", "ssl", "gssapi"] }
@@ -26,7 +27,8 @@ tokio = { version = "0.2.19", features = ["full"] }
 futures = "0.3.5"
 futures-util = "0.3.5"
 percent-encoding = "2.1.0"
-redis = { version = "0.16.0", features = ["tokio-rt-core"] }
+redis = { version = "0.17.0", features = ["connection-manager", "tokio-rt-core"] }
+ring = "0.16.15"
 rio_api = "0.4.0"
 rio_turtle = "0.4.0"
 serde = { version = "1.0.106", features = ["derive"] }

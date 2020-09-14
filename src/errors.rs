@@ -2,6 +2,8 @@ error_chain! {
     errors {
         ToDo
 
+        BackendUnavailable
+
         Unexpected {
             description("Unexpected error occurred")
         }
@@ -27,6 +29,8 @@ error_chain! {
         InvalidGraphFormat {
             description("Operator graph parameter not properly formatted")
         }
+
+        InvalidRequest
 
         ParserError(t: String) {
             description("Error parsing message")
