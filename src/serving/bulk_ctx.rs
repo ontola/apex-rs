@@ -1,6 +1,5 @@
 use crate::app_config::AppConfig;
 use crate::errors::ErrorKind;
-use crate::importing::redis::create_redis_consumer;
 use crate::rdf::iri_utils::stem_iri;
 use crate::serving::bulk::{
     RefreshTokenRequest, RefreshTokenResponse, SPIBulkRequest, SPIResourceRequestItem,
@@ -13,12 +12,12 @@ use actix_http::http::{header, StatusCode};
 use actix_web::client::{Client, ClientRequest};
 use actix_web::{web, HttpMessage};
 use chrono::TimeZone;
+use itertools::Itertools;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use redis::Commands;
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::env;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -49,6 +48,11 @@ struct Claims {
 }
 
 impl BulkCtx {
+    fn create_redis_consumer(url: &str) -> redis::RedisResult<redis::Connection> {
+        let client = redis::Client::open(url)?;
+        client.get_connection()
+    }
+
     pub(crate) fn new(req: actix_web::HttpRequest, config: web::Data<AppConfig>) -> BulkCtx {
         BulkCtx {
             req,
@@ -172,7 +176,7 @@ impl BulkCtx {
 
     async fn determine_tenant_path(&mut self) -> Result<String, ErrorKind> {
         let client = Client::default();
-        let core_api_host = env::var("ARGU_API_URL").unwrap();
+        let core_api_host = self.config.data_server_url.clone();
         let tenant_req_body = SPITenantFinderRequest {
             iri: self.website()?.into(),
         };
@@ -216,27 +220,45 @@ impl BulkCtx {
     fn determine_website(&self) -> Result<String, ErrorKind> {
         let headers = self.req.headers();
 
-        let authority = ["authority", "X-Forwarded-Host", "origin", "host", "accept"]
+        let header_key = ["authority", "X-Forwarded-Host", "origin", "host", "accept"]
             .iter()
             .find(|header| headers.contains_key(String::from(**header)))
-            .and_then(
-                |header_key| match headers.get(*header_key).unwrap().to_str() {
-                    Ok(authority) => {
-                        let authority = authority.to_string();
-                        if authority.contains(":") {
-                            Some(authority)
-                        } else {
-                            headers
-                                .get("X-Forwarded-Proto")
-                                .and_then(|h| h.to_str().ok())
-                                .or_else(|| headers.get("scheme").and_then(|h| h.to_str().ok()))
-                                .and_then(|proto| Some(format!("{}://{}", proto, authority)))
+            .expect("No header usable for authority present");
+        let authority = match headers.get(*header_key).unwrap().to_str() {
+            Ok(authority) => {
+                let authority = authority.to_string();
+                if authority.contains(":") {
+                    Ok(authority)
+                } else {
+                    debug!(target: "apex", "Authority not complete: {}", authority);
+                    let proto = if let Some(t) = headers.get("X-Forwarded-Proto") {
+                        t.to_str().unwrap()
+                    } else {
+                        match headers.get("scheme") {
+                            Some(scheme) => scheme.to_str().unwrap(),
+                            None => {
+                                let header_map = headers
+                                    .iter()
+                                    .map(|(k, v)| {
+                                        format!(
+                                            "{}: {}",
+                                            k.to_string(),
+                                            v.to_str().expect("Invalid header key")
+                                        )
+                                    })
+                                    .join("\n");
+                                debug!(target: "apex", "Headers: {}", header_map);
+                                bail!("No forwarded proto nor scheme header")
+                            }
                         }
-                    }
-                    Err(_) => None,
-                },
-            )
-            .expect("Could not determine authority");
+                    };
+
+                    Ok(format!("{}://{}", proto, authority))
+                }
+            }
+            Err(e) => Err(e),
+        };
+        let authority = authority.unwrap();
 
         if headers.contains_key("website-iri") {
             let website_iri: &str = match headers.get("website-iri") {
@@ -277,7 +299,11 @@ impl BulkCtx {
                             .req
                             .cookie(&signature_name)
                             .expect("Session cookie without signature");
-                        let secret = self.config.session_secret.as_ref().unwrap();
+                        let secret = self
+                            .config
+                            .session_secret
+                            .as_ref()
+                            .expect("No session secret set");
                         let key =
                             hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, &secret.as_bytes());
 
@@ -297,24 +323,26 @@ impl BulkCtx {
                             ))
                         }
                     }
-                    Err(_) => Err(ErrorKind::InvalidRequest),
+                    Err(_) => Err(ErrorKind::Msg("Invalid session cookie format".into())),
                 },
-                None => Err(ErrorKind::ToDo),
+                None => Err(ErrorKind::Msg("No session cookie in request".into())),
             },
-            None => Err(ErrorKind::ToDo),
+            None => Err(ErrorKind::Msg("No session cookie name configured".into())),
         }
     }
 
     async fn retrieve_and_validate_token(&mut self, session_id: &str) -> Result<String, ErrorKind> {
-        info!(target: "apex", "retrieve_and_validate_token 0");
         let enc_token = self
             .config
             .jwt_encryption_token
             .as_ref()
             .expect("No JWT encryption token");
 
-        let mut redis = create_redis_consumer().expect("Failed to connect to redis");
-        let value: String = redis.get(session_id).map_err(|_| ErrorKind::Unexpected)?;
+        let mut redis = BulkCtx::create_redis_consumer(&self.config.redis_url)
+            .expect("Failed to connect to redis");
+        let value: String = redis
+            .get(session_id)
+            .map_err(|_| ErrorKind::Msg(format!("Session {} not found in redis", session_id)))?;
         let token: RedisSession = serde_json::from_str(&value)
             .map_err(|_| ErrorKind::ParserError("Unexpected session value".into()))?;
 
@@ -360,7 +388,7 @@ impl BulkCtx {
         refresh_token: &str,
     ) -> Result<RefreshTokenResponse, ErrorKind> {
         let client = Client::default();
-        let core_api_host = env::var("ARGU_API_URL").unwrap();
+        let core_api_host = &self.config.data_server_url;
         let refresh_token_req = RefreshTokenRequest {
             client_id: self
                 .config

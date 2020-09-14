@@ -25,12 +25,11 @@ pub fn doc_by_iri<'a>(
     let (doc, resources) = first.unwrap();
     for (resource, resource_properties) in resources {
         for p in resource_properties {
-            let predicate = ctx
-                .property_map
-                .iter()
-                .find(|(_, v)| **v == p.predicate_id)
-                .unwrap()
-                .0;
+            let predicate = ctx.property_map.iter().find(|(_, v)| **v == p.predicate_id);
+            let predicate = match predicate {
+                Some(s) => s.0,
+                None => bail!(ErrorKind::Msg(format!("unknown predicate: {}", p.value))),
+            };
             let datatype = ctx
                 .datatype_map
                 .iter()
@@ -77,7 +76,9 @@ const EMPTY_STRING: &str = "";
 
 pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Document, HashModel) {
     match doc_by_iri(&mut ctx, iri) {
-        Err(_) => {
+        Err(e) => {
+            debug!("Error resetting document: {}", e);
+            trace!("Document iri {} not yet in db", iri);
             let doc = &NewDocument {
                 iri: String::from(iri),
             };
@@ -89,6 +90,7 @@ pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Docu
             (doc, vec![])
         }
         Ok(model) => {
+            trace!("Document with iri {} has id {}", model.0.iri, model.0.id);
             delete_document_data(&ctx.get_conn(), iri);
             model
         }

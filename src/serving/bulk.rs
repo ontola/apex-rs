@@ -61,6 +61,12 @@ pub(crate) struct SPIResourceResponseItem {
     body: Option<String>,
 }
 
+#[derive(Deserialize, Debug)]
+pub(crate) struct SPIError {
+    error: String,
+    error_description: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct RefreshTokenRequest {
     pub client_id: String,
@@ -268,17 +274,29 @@ async fn authorize_resources(
                 }
             };
 
-            match serde_json::from_slice::<Vec<SPIResourceResponseItem>>(&body) {
-                Ok(data) => Ok(data),
-                Err(e) => {
-                    debug!(target: "apex", "Unexpected error parsing bulk authorize response: {}", e);
-                    if cfg!(debug_assertions) {
-                        let output = String::from_utf8(body.to_vec()).unwrap();
-                        debug!("Response body from server: {}", output);
-                    }
+            match response.status().as_u16() {
+                200 => match serde_json::from_slice::<Vec<SPIResourceResponseItem>>(&body) {
+                    Ok(data) => Ok(data),
+                    Err(e) => {
+                        debug!(target: "apex", "Unexpected error parsing bulk authorize response: {} with body: {}", e, String::from_utf8(body.clone()).unwrap());
+                        if cfg!(debug_assertions) {
+                            let output = String::from_utf8(body.to_vec()).unwrap();
+                            debug!("Response body from server: {}", output);
+                        }
 
-                    Err(ErrorKind::Unexpected)
-                }
+                        Err(ErrorKind::Unexpected)
+                    }
+                },
+                _ => match serde_json::from_slice::<SPIError>(&body) {
+                    Ok(e) => {
+                        warn!(target: "apex", "Bulk authorize error: {} with description: {}", e.error, e.error_description);
+                        Err(ErrorKind::Unexpected)
+                    }
+                    Err(e) => {
+                        error!(target: "apex", "Unexpected error parsing bulk authorize error: {} with body: {}", e, String::from_utf8(body.clone()).unwrap());
+                        Err(ErrorKind::Unexpected)
+                    }
+                },
             }
         }
     }

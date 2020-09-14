@@ -63,7 +63,11 @@ impl<'a> DbContext<'a> {
     }
 
     pub fn default_pool() -> DbPool {
-        DbContext::custom_pool(env::var("DATABASE_URL").unwrap().as_str())
+        DbContext::custom_pool(
+            env::var("DATABASE_URL")
+                .expect("No DATABASE_URL set")
+                .as_str(),
+        )
     }
 
     pub fn est_counts(&self) -> DbCounts {

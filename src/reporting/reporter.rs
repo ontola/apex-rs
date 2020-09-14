@@ -74,7 +74,8 @@ impl Reporter {
         self.last_timing = timing;
     }
 
-    fn add_error(&mut self, _: ErrorKind) {
+    fn add_error(&mut self, e: ErrorKind) {
+        error!(target: "apex", "{}", e);
         self.error_count += 1;
     }
 
