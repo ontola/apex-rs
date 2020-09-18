@@ -413,9 +413,8 @@ async fn process_private_and_missing(
                 debug!(target: "apex", "Error while authorizing: {}", msg);
                 return Err(HttpResponse::BadRequest().finish());
             }
-            Err(ErrorKind::BackendUnavailable) => {
-                return Err(HttpResponse::BadGateway().finish());
-            }
+            Err(ErrorKind::BackendUnavailable) => return Err(HttpResponse::BadGateway().finish()),
+            Err(ErrorKind::Timeout) => return Err(HttpResponse::GatewayTimeout().finish()),
             Err(err) => {
                 error!(target: "apex", "Unexpected error while authorizing: {}", err);
                 return Err(HttpResponse::InternalServerError().finish());
