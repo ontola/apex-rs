@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub data_server_timeout: u64,
     /// The url of the server to retrieve the data from
     pub data_server_url: String,
+    /// The connection string of the database
+    pub database_url: String,
     /// Controls whether persistent storage is used for data.
     pub disable_persistence: bool,
     /// Enable to allow write commands via the HTTP interface
@@ -31,6 +33,27 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let database_url = match env::var("DATABASE_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                warn!("No ");
+                let postgresql_username =
+                    env::var("POSTGRESQL_USERNAME").unwrap_or("postgres".into());
+                let postgresql_password = env::var("POSTGRESQL_PASSWORD").unwrap_or("".into());
+                let postgresql_address =
+                    env::var("POSTGRESQL_ADDRESS").unwrap_or("localhost".into());
+                let apex_database_name = env::var("APEX_DATABASE_NAME").unwrap_or("apex_rs".into());
+                format!(
+                    "postgres://{}:{}@{}/{}",
+                    postgresql_username,
+                    postgresql_password,
+                    postgresql_address,
+                    apex_database_name
+                )
+                .into()
+            }
+        };
+
         AppConfig {
             binding: env::var("BINDING").unwrap_or("0.0.0.0".into()),
             client_id: env::var("ARGU_APP_ID")
@@ -39,19 +62,20 @@ impl Default for AppConfig {
             client_secret: env::var("ARGU_APP_SECRET")
                 .or_else(|_| env::var("LIBRO_APP_SECRET"))
                 .ok(),
-            jwt_encryption_token: env::var("JWT_ENCRYPTION_TOKEN").ok(),
+            data_server_timeout: env::var("PROXY_TIMEOUT")
+                .unwrap_or("20".into())
+                .parse::<u64>()
+                .unwrap(),
+            data_server_url: env::var("ARGU_API_URL").expect("No data server url set"),
+            database_url,
             disable_persistence: env::var("DISABLE_PERSISTENCE")
                 .and_then(|v| Ok(v == "true".to_string()))
                 .unwrap_or_else(|_| false),
             enable_unsafe_methods: env::var("ENABLE_UNSAFE_METHODS")
                 .and_then(|v| Ok(v == "true".to_string()))
                 .unwrap_or_else(|_| false),
+            jwt_encryption_token: env::var("JWT_ENCRYPTION_TOKEN").ok(),
             port: env::var("PORT").unwrap_or("3030".into()),
-            data_server_timeout: env::var("PROXY_TIMEOUT")
-                .unwrap_or("20".into())
-                .parse::<u64>()
-                .unwrap(),
-            data_server_url: env::var("ARGU_API_URL").expect("No data server url set"),
             redis_url: env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into()),
             service_guest_token: env::var("SERVICE_GUEST_TOKEN").ok(),
             session_cookie_name: env::var("SESSION_COOKIE_NAME").ok(),

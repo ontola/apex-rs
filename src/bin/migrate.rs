@@ -5,6 +5,7 @@ extern crate log;
 #[macro_use]
 extern crate diesel_migrations;
 
+use apex_rs::app_config::AppConfig;
 use apex_rs::db::db_context::DbContext;
 use apex_rs::db::models::{ConfigItem, Object, Property};
 use apex_rs::db::schema;
@@ -48,7 +49,8 @@ fn setup() {
 
     info!("Running setup");
 
-    let pool = DbContext::default_pool();
+    let config = AppConfig::default();
+    let pool = DbContext::default_pool(&config.database_url);
 
     match embedded_migrations::run_with_output(
         &pool.get().expect("Can't connect to db"),
@@ -85,7 +87,8 @@ fn migrate_2020_05_15_152936() {
     use schema::objects::dsl::objects;
     use schema::properties::dsl;
 
-    let pool = DbContext::default_pool();
+    let config = AppConfig::default();
+    let pool = DbContext::default_pool(&config.database_url);
     let ctx = DbContext::new(&pool);
     let db_conn = ctx.get_conn();
 

@@ -12,10 +12,6 @@ use actix_web::dev::Service;
 use actix_web::{middleware, App, HttpServer};
 use uuid::Uuid;
 
-fn get_app_config() -> AppConfig {
-    AppConfig::default()
-}
-
 fn secret_for_print(v: Option<&String>) -> isize {
     v.map_or(-1 as isize, |v| v.len() as isize)
 }

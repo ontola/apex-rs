@@ -1,3 +1,4 @@
+use crate::app_config::AppConfig;
 use crate::db::db_context::DbContext;
 use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
@@ -15,7 +16,8 @@ pub async fn import_redis(
     let mut consumer = create_redis_consumer().expect("Failed to create redis consumer");
     println!("Initialized redis config");
 
-    let pool = DbContext::default_pool();
+    let config = AppConfig::default();
+    let pool = DbContext::default_pool(&config.database_url);
     let mut ctx = DbContext::new(&pool);
 
     let mut pubsub = consumer.as_pubsub();

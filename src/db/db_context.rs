@@ -7,7 +7,6 @@ use bimap::{BiHashMap, BiMap};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::{r2d2, PgConnection};
-use std::env;
 use std::hash::Hash;
 
 pub type IRIMapping = BiMap<String, i32>;
@@ -62,12 +61,8 @@ impl<'a> DbContext<'a> {
             .expect("Failed to create pool.")
     }
 
-    pub fn default_pool() -> DbPool {
-        DbContext::custom_pool(
-            env::var("DATABASE_URL")
-                .expect("No DATABASE_URL set")
-                .as_str(),
-        )
+    pub fn default_pool(database_url: &str) -> DbPool {
+        DbContext::custom_pool(database_url)
     }
 
     pub fn est_counts(&self) -> DbCounts {
