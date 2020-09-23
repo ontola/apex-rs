@@ -10,9 +10,10 @@ use crate::serving::update::update;
 use actix_http::http::{HeaderName, HeaderValue};
 use actix_web::dev::Service;
 use actix_web::{middleware, App, HttpServer};
+use futures::io::ErrorKind;
 use uuid::Uuid;
 
-fn secret_for_print(v: Option<&String>) -> isize {
+fn secret_for_print(v: Option<String>) -> isize {
     v.map_or(-1 as isize, |v| v.len() as isize)
 }
 
@@ -26,7 +27,9 @@ fn print_config(cfg: &AppConfig) {
     client_id: {}
     client_secret: {}
     data_server_timeout: '{}'
-    data_server_url: '{}'
+    data_server_url: {}
+    database_url: {}
+    database_name: {}
     disable_persistence: '{}'
     enable_unsafe_methods: '{}'
     jwt_encryption_token: {}
@@ -38,18 +41,20 @@ fn print_config(cfg: &AppConfig) {
     session_secret: {}", 
             cfg.binding,
             value_for_print(cfg.client_id.clone()),
-            secret_for_print(cfg.client_secret.as_ref()),
+            secret_for_print(cfg.client_secret.clone()),
             cfg.data_server_timeout,
-            cfg.data_server_url,
+            value_for_print(cfg.data_server_url.clone()),
+            secret_for_print(cfg.database_url.clone()),
+            value_for_print(Some(cfg.database_name.clone())),
             cfg.disable_persistence,
             cfg.enable_unsafe_methods,
-            secret_for_print(cfg.jwt_encryption_token.as_ref()),
+            secret_for_print(cfg.jwt_encryption_token.clone()),
             cfg.port,
             cfg.redis_url,
-            secret_for_print(cfg.service_guest_token.as_ref()),
+            secret_for_print(cfg.service_guest_token.clone()),
             value_for_print(cfg.session_cookie_name.clone()),
             value_for_print(cfg.session_cookie_sig_name.clone()),
-            secret_for_print(cfg.session_secret.as_ref()),
+            secret_for_print(cfg.session_secret.clone()),
     );
 }
 
@@ -58,7 +63,10 @@ pub async fn serve() -> std::io::Result<()> {
     if cfg!(debug_assertions) {
         print_config(&config);
     }
-    let pool = DbContext::default_pool(&config.database_url);
+    let pool = DbContext::default_pool(config.database_url.clone()).map_err(|e| {
+        error!(target: "apex", "{}", e);
+        ErrorKind::Other
+    })?;
     let address = format!("{}:{}", config.binding, config.port);
 
     HttpServer::new(move || {

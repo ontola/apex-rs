@@ -11,8 +11,10 @@ async fn main() -> std::io::Result<()> {
     info!(target: "apex", "Booting");
     env_logger::init();
     if cfg!(debug_assertions) {
-        dotenv().ok();
-        info!(target: "apex", "Initialized .env");
+        match dotenv() {
+            Ok(_) => info!(target: "apex", "Initialized .env"),
+            Err(e) => warn!(target: "apex", "Error loading .env: {}", e),
+        }
     }
 
     serve().await

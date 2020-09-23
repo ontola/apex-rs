@@ -7,18 +7,26 @@ extern crate diesel_migrations;
 
 use apex_rs::app_config::AppConfig;
 use apex_rs::db::db_context::DbContext;
-use apex_rs::db::models::{ConfigItem, Object, Property};
+use apex_rs::db::models::ConfigItem;
 use apex_rs::db::schema;
-use apex_rs::db::uu128::Uu128;
 use clap::{App, Arg};
-use diesel::result::Error::RollbackTransaction;
-use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::connection::SimpleConnection;
+use diesel::result::Error::NotFound;
+use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
+use dotenv::dotenv;
+use url::Url;
 
 embed_migrations!("./migrations");
 
 /// Tool to run after running a migration which can't/is to bothersome to be expressed in SQL
-fn main() {
+fn main() -> Result<(), String> {
     env_logger::init();
+    if cfg!(debug_assertions) {
+        match dotenv() {
+            Ok(_) => info!(target: "apex", "Initialized .env"),
+            Err(e) => warn!(target: "apex", "Error loading .env: {}", e),
+        }
+    }
 
     let matches = App::new("Apex migrate")
         .version("1.0")
@@ -33,24 +41,42 @@ fn main() {
         .get_matches();
 
     match matches.value_of("version") {
-        Some("setup") => {
-            setup();
-        }
-        Some("2020_05_15_152936") => {
-            migrate_2020_05_15_152936();
-        }
-        Some(_) => println!("Invalid version"),
-        None => println!("Provide a version to run"),
-    };
+        Some("setup") => setup(),
+        Some(_) => Err("Invalid version".into()),
+        None => Err("Provide a version to run".into()),
+    }
 }
 
-fn setup() {
+fn setup() -> Result<(), String> {
     use schema::_apex_config::dsl;
 
-    info!("Running setup");
+    info!(target: "apex", "Running setup");
 
     let config = AppConfig::default();
-    let pool = DbContext::default_pool(&config.database_url);
+    let db_url = config
+        .database_url
+        .clone()
+        .expect("No DB connection string");
+    let mut connstr = Url::parse(&db_url).unwrap();
+    connstr.set_path("");
+    // Wait until db is up
+    DbContext::default_pool(Some(connstr.to_string()))?;
+
+    match PgConnection::establish(&connstr.to_string()) {
+        Ok(c) => {
+            let q = format!("CREATE DATABASE {}", config.database_name);
+            if let Err(e) = c.batch_execute(&q) {
+                warn!(target: "apex", "Error creating database: {}", e);
+            } else {
+                info!(target: "apex", "Created database {}", config.database_name);
+            }
+        }
+        Err(e) => {
+            error!(target: "apex", "Can't connect to db: {}", e);
+        }
+    }
+
+    let pool = DbContext::default_pool(config.database_url.clone())?;
 
     match embedded_migrations::run_with_output(
         &pool.get().expect("Can't connect to db"),
@@ -62,10 +88,14 @@ fn setup() {
 
     let seed = dsl::_apex_config
         .filter(dsl::key.eq("seed"))
-        .load::<ConfigItem>(&pool.get().unwrap());
+        .get_result::<ConfigItem>(&pool.get().unwrap());
 
     match seed {
-        Err(_) => {
+        Ok(v) => {
+            info!("Seed already present ({}), skipping", v.value);
+            Ok(())
+        }
+        Err(NotFound) => {
             info!("Adding 'seed' config item");
             let value = rand::random::<u32>().to_string();
             diesel::insert_into(dsl::_apex_config)
@@ -76,68 +106,11 @@ fn setup() {
                 .execute(&pool.get().expect("Can't connect to db"))
                 .expect("Setup seed failed");
 
-            ()
+            Ok(())
         }
-        _ => info!("Seed already present, skipping"),
-    }
-}
-
-fn migrate_2020_05_15_152936() {
-    debug!("Migrating 2020_05_15_152936");
-    use schema::objects::dsl::objects;
-    use schema::properties::dsl;
-
-    let config = AppConfig::default();
-    let pool = DbContext::default_pool(&config.database_url);
-    let ctx = DbContext::new(&pool);
-    let db_conn = ctx.get_conn();
-
-    let page_size = 8192;
-    let mut cur_offset = 0;
-
-    loop {
-        db_conn
-            .transaction::<(), diesel::result::Error, _>(|| {
-                let props: Result<Vec<Property>, diesel::result::Error> = dsl::properties
-                    .offset(cur_offset)
-                    .limit(page_size)
-                    .get_results::<Property>(&db_conn);
-                cur_offset += page_size;
-
-                match props {
-                    Ok(props) => {
-                        println!(
-                            "Process: {}, from: {}",
-                            props.len(),
-                            props.first().unwrap().id
-                        );
-
-                        let values = props.iter().map(|p| &p.value);
-
-                        let mut hashes = vec![];
-
-                        for v in values {
-                            hashes.push(Object {
-                                hash: Uu128::from(ctx.lookup_table.calculate_hash(&v)),
-                                value: String::from(v),
-                            });
-                        }
-
-                        diesel::insert_into(objects)
-                            .values(hashes)
-                            .on_conflict_do_nothing()
-                            .execute(&db_conn)
-                            .expect("Insert failed");
-
-                        Ok(())
-                    }
-                    Err(e) => {
-                        println!("Error: {}", e);
-
-                        Err(RollbackTransaction)
-                    }
-                }
-            })
-            .unwrap();
+        Err(e) => {
+            error!(target: "apex", "Unexpected error occurred: {}", e);
+            Err(e.to_string())
+        }
     }
 }

@@ -12,12 +12,12 @@ use tokio::task;
 
 pub async fn import_redis(
     updates: &mut Sender<Result<MessageTiming, ErrorKind>>,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     let mut consumer = create_redis_consumer().expect("Failed to create redis consumer");
     println!("Initialized redis config");
 
     let config = AppConfig::default();
-    let pool = DbContext::default_pool(&config.database_url);
+    let pool = DbContext::default_pool(config.database_url)?;
     let mut ctx = DbContext::new(&pool);
 
     let mut pubsub = consumer.as_pubsub();

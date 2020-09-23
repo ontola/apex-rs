@@ -15,8 +15,10 @@ async fn main() {
     env_logger::init();
     debug!(target: "apex", "Booting");
     if cfg!(debug_assertions) {
-        dotenv().ok();
-        info!(target: "apex", "Initialized .env");
+        match dotenv() {
+            Ok(_) => info!(target: "apex", "Initialized .env"),
+            Err(e) => warn!(target: "apex", "Error loading .env: {}", e),
+        }
     }
 
     let (mut tx, mut rx) = channel::<Result<MessageTiming, ErrorKind>>(100);

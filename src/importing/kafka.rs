@@ -16,7 +16,7 @@ use tokio::task;
 
 pub async fn import_kafka(
     updates: &mut Sender<Result<MessageTiming, ErrorKind>>,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     let consumer = create_kafka_consumer().expect("Failed to create kafka consumer");
     println!("Initialized kafka config");
 
@@ -27,7 +27,7 @@ pub async fn import_kafka(
     let mut stream = consumer.start();
 
     let config = AppConfig::default();
-    let pool = DbContext::default_pool(&config.database_url);
+    let pool = DbContext::default_pool(config.database_url)?;
     let mut ctx = DbContext::new(&pool);
     println!("Start listening for messages");
     let mut last_listen_time = Instant::now();

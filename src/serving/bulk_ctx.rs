@@ -115,7 +115,10 @@ impl BulkCtx {
         let mut backend_req = client
             .post(format!(
                 "{}{}/spi/bulk",
-                self.config.data_server_url.clone(),
+                self.config
+                    .data_server_url
+                    .clone()
+                    .expect("No data server url set"),
                 self.tenant_path().await?
             ))
             .timeout(Duration::from_secs(self.config.data_server_timeout.clone()))
@@ -176,7 +179,11 @@ impl BulkCtx {
 
     async fn determine_tenant_path(&mut self) -> Result<String, ErrorKind> {
         let client = Client::default();
-        let core_api_host = self.config.data_server_url.clone();
+        let core_api_host = self
+            .config
+            .data_server_url
+            .clone()
+            .expect("No data server url set");
         let tenant_req_body = SPITenantFinderRequest {
             iri: self.website()?.into(),
         };
@@ -388,7 +395,11 @@ impl BulkCtx {
         refresh_token: &str,
     ) -> Result<RefreshTokenResponse, ErrorKind> {
         let client = Client::default();
-        let core_api_host = &self.config.data_server_url;
+        let core_api_host = self
+            .config
+            .data_server_url
+            .clone()
+            .expect("No data server url set");
         let refresh_token_req = RefreshTokenRequest {
             client_id: self
                 .config

@@ -61,8 +61,11 @@ impl<'a> DbContext<'a> {
             .expect("Failed to create pool.")
     }
 
-    pub fn default_pool(database_url: &str) -> DbPool {
-        DbContext::custom_pool(database_url)
+    pub fn default_pool(database_url: Option<String>) -> Result<DbPool, String> {
+        match database_url {
+            Some(database_url) => Ok(DbContext::custom_pool(database_url.as_str())),
+            None => bail!(String::from("No DB connection string or missing parts")),
+        }
     }
 
     pub fn est_counts(&self) -> DbCounts {
@@ -89,9 +92,7 @@ pub(crate) fn get_config(db_conn: &DbPool) -> Result<Config, ()> {
 
     let seed = dsl::_apex_config
         .filter(dsl::key.eq("seed"))
-        .load::<ConfigItem>(&db_conn.get().unwrap())
-        .unwrap()
-        .first()
+        .get_result::<ConfigItem>(&db_conn.get().unwrap())
         .expect("Config has no seed row")
         .value
         .parse::<u32>()

@@ -21,7 +21,7 @@ struct Reporter {
     last_timing: MessageTiming,
 }
 
-pub async fn report(rx: &mut Receiver<Result<MessageTiming, ErrorKind>>) -> Result<(), ()> {
+pub async fn report(rx: &mut Receiver<Result<MessageTiming, ErrorKind>>) -> Result<(), String> {
     let stdout = stdout();
     let mut stdout = stdout.lock();
     println!("Reported started");
