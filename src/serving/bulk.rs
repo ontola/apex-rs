@@ -15,6 +15,7 @@ use crate::serving::responses::set_default_headers;
 use crate::serving::serialization::{
     bulk_result_to_hextuples, bulk_result_to_nquads, bulk_result_to_ntriples,
 };
+use crate::serving::sessions::{session_id, session_info};
 use actix_http::error::BlockingError;
 use actix_web::client::SendRequestError;
 use actix_web::http::header;
@@ -58,6 +59,7 @@ pub(crate) struct SPIResourceResponseItem {
     iri: String,
     status: i16,
     cache: CacheControl,
+    language: Option<String>,
     body: Option<String>,
 }
 
@@ -65,20 +67,6 @@ pub(crate) struct SPIResourceResponseItem {
 pub(crate) struct SPIError {
     error: String,
     error_description: String,
-}
-
-#[derive(Serialize)]
-pub(crate) struct RefreshTokenRequest {
-    pub client_id: String,
-    pub client_secret: String,
-    pub grant_type: String,
-    pub refresh_token: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RefreshTokenResponse {
-    pub access_token: String,
-    pub refresh_token: String,
 }
 
 pub(crate) struct Resource {
@@ -122,7 +110,21 @@ pub(crate) async fn bulk<'a>(
 
     let pl = pool.clone().into_inner();
 
-    let mut req = BulkCtx::new(req, config);
+    let lang = match session_id(&req) {
+        Ok(sid) => match session_info(&sid).await {
+            Ok(info) => Some(info.user.language),
+            Err(e) => match e {
+                ErrorKind::ExpiredSession => {
+                    // TODO: REFRESH
+                    debug!(target: "apex", "EXPIRED SESSION");
+                    None
+                }
+                _ => Some(String::from("en")), // TODO: Take from manifest
+            },
+        },
+        Err(_) => Some(String::from("en")),
+    };
+    let mut req = BulkCtx::new(req, config, lang);
 
     let resources = match parse_request(payload).await {
         Ok(resources) => resources,
@@ -138,11 +140,10 @@ pub(crate) async fn bulk<'a>(
     let parse_end = Instant::now();
     let parse_time = parse_end.duration_since(parse_start);
 
-    let (mut bulk_docs, mut lookup_table) =
-        match lookup_resources(req.config.disable_persistence, pl, bulk_resources).await {
-            Ok(res) => (res.0, res.1),
-            Err(_) => return HttpResponse::InternalServerError().finish(),
-        };
+    let (mut bulk_docs, mut lookup_table) = match lookup_resources(&req, pl, bulk_resources).await {
+        Ok(res) => (res.0, res.1),
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
     let lookup_end = Instant::now();
     let lookup_time = lookup_end.duration_since(parse_end);
 
@@ -345,12 +346,15 @@ fn log_report(timing: BulkTiming) {
 }
 
 async fn lookup_resources(
-    disable_persistence: bool,
+    req: &BulkCtx,
     pl: Arc<DbPool>,
     bulk_resources: Vec<String>,
 ) -> Result<(Vec<Resource>, LookupTable), BlockingError<i32>> {
+    let disable_persistence = req.config.disable_persistence.clone();
+    let lang = req.language.clone();
+
     web::block(move || -> Result<(Vec<Resource>, LookupTable), i32> {
-        let mut ctx = DbContext::new(&pl);
+        let mut ctx = DbContext::new_with_lang(&pl, lang);
         let resources = bulk_resources.into_iter().map(stem_iri);
 
         let models: Vec<Resource> = if disable_persistence {
@@ -444,6 +448,7 @@ async fn process_private_and_missing(
                     iri: r.iri.clone(),
                     status: r.status,
                     cache_control: r.cache,
+                    language: r.language.clone(),
                     data: docset_to_model(data),
                 });
             }
@@ -467,7 +472,7 @@ async fn process_private_and_missing(
     if !req.config.disable_persistence && !unstored_and_storable.is_empty() {
         trace!(target: "apex", "Storing {} new resources", unstored_and_storable.len());
         let pl = pool.into_inner();
-        let mut ctx = DbContext::new(&pl);
+        let mut ctx = DbContext::new_with_lang(&pl, req.language.clone());
         ctx.lookup_table = lookup_table;
 
         for doc in &unstored_and_storable {

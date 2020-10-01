@@ -14,9 +14,15 @@ error_chain! {
 
         NoResources
 
+        NotFound
+
         EmptyDocument
 
         EmptyDelta
+
+        ExpiredSession
+
+        CookieInvalidSignature
 
         DeltaWithoutOperator {
             description("Delta statement doesn't have an operator (was a triple)")

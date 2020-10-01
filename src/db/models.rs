@@ -26,12 +26,15 @@ pub struct Document {
     pub updated_at: NaiveDateTime,
     #[sql_type = "SmallInt"]
     pub cache_control: i16,
+    #[sql_type = "VarChar"]
+    pub language: String,
 }
 
 #[derive(Eq, PartialEq, Debug, Associations, Insertable)]
 #[table_name = "documents"]
 pub struct NewDocument {
     pub iri: String,
+    pub language: String,
 }
 
 #[derive(Eq, PartialEq, Debug, Queryable, Associations, Identifiable)]

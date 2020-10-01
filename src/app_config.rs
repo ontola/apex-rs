@@ -98,3 +98,10 @@ impl Default for AppConfig {
         }
     }
 }
+
+impl AppConfig {
+    pub fn create_redis_consumer(&self) -> redis::RedisResult<redis::Connection> {
+        let client = redis::Client::open(self.redis_url.clone())?;
+        client.get_connection()
+    }
+}

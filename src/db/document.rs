@@ -81,6 +81,7 @@ pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Docu
             trace!("Document iri {} not yet in db", iri);
             let doc = &NewDocument {
                 iri: String::from(iri),
+                language: ctx.lang.clone().expect("No language given"),
             };
             let doc = diesel::insert_into(schema::documents::table)
                 .values(doc)
@@ -115,7 +116,10 @@ pub(crate) fn delete_all_document_data(db_conn: &PgConnection) -> QueryResult<us
     db_conn.execute("TRUNCATE TABLE documents CASCADE")
 }
 
-fn delete_document_data(db_conn: &PgConnection, doc_iri: &str) -> i64 {
+pub(crate) fn delete_document_data(
+    db_conn: &PgConnection,
+    doc_iri: &str,
+) -> Result<i64, ErrorKind> {
     use schema::documents;
     use schema::properties;
     use schema::resources::dsl::*;
@@ -124,7 +128,7 @@ fn delete_document_data(db_conn: &PgConnection, doc_iri: &str) -> i64 {
         .filter(documents::iri.eq(doc_iri))
         .select(documents::id)
         .get_result::<i64>(db_conn)
-        .unwrap_or_else(|_| panic!("Document with iri '{}' does not exist", doc_iri));
+        .map_err(|_| ErrorKind::NotFound)?;
 
     let resource_ids = resources
         .select(id)
@@ -143,7 +147,7 @@ fn delete_document_data(db_conn: &PgConnection, doc_iri: &str) -> i64 {
         .execute(db_conn)
         .expect("Couldn't delete existing resources");
 
-    doc_id
+    Ok(doc_id)
 }
 
 fn get_document(
@@ -153,10 +157,17 @@ fn get_document(
     use schema::documents::dsl::*;
     let db_conn = db_ctx.get_conn();
 
-    let docs: Vec<Document> = documents
-        .filter(iri.eq(doc_iri))
-        .load::<Document>(&db_conn)
-        .unwrap();
+    let docs = if let Some(lang) = db_ctx.lang.clone() {
+        documents
+            .filter(iri.eq(doc_iri).and(language.eq(lang)))
+            .load::<Document>(&db_conn)
+            .unwrap()
+    } else {
+        documents
+            .filter(iri.eq(doc_iri))
+            .load::<Document>(&db_conn)
+            .unwrap()
+    };
 
     let doc_resources: Vec<Resource> = Resource::belonging_to(&docs)
         .load::<Resource>(&db_conn)

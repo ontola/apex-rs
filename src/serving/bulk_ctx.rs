@@ -2,49 +2,30 @@ use crate::app_config::AppConfig;
 use crate::errors::ErrorKind;
 use crate::rdf::iri_utils::stem_iri;
 use crate::serving::bulk::{
-    RefreshTokenRequest, RefreshTokenResponse, SPIBulkRequest, SPIResourceRequestItem,
-    SPITenantFinderRequest, SPITenantFinderResponse,
+    SPIBulkRequest, SPIResourceRequestItem, SPITenantFinderRequest, SPITenantFinderResponse,
 };
 use crate::serving::request_headers::HeaderCopy;
+use crate::serving::sessions::{
+    retrieve_session, session_id, session_info, RedisSession, RefreshTokenRequest,
+    RefreshTokenResponse,
+};
 use crate::serving::ua::bulk_ua;
 use actix_http::client::SendRequestError;
 use actix_http::http::{header, StatusCode};
 use actix_web::client::{Client, ClientRequest};
-use actix_web::{web, HttpMessage};
+use actix_web::web;
 use chrono::TimeZone;
 use itertools::Itertools;
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use redis::Commands;
-use ring::hmac;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;
-use uuid::Uuid;
 
 pub(crate) struct BulkCtx {
     pub(crate) req: actix_web::HttpRequest,
     pub(crate) config: web::Data<AppConfig>,
+    pub(crate) language: Option<String>,
     current_tenant_path: Result<String, ErrorKind>,
     current_website: Result<String, ErrorKind>,
-}
-
-#[derive(PartialEq, Clone, Debug, Deserialize, Serialize)]
-struct RedisSession {
-    secret: String,
-    #[serde(rename = "userToken")]
-    user_token: String,
-    #[serde(rename = "refreshToken")]
-    refresh_token: String,
-    #[serde(rename = "_expire")]
-    expire: isize,
-    #[serde(rename = "_maxAge")]
-    max_age: isize,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    iat: i64,
-    exp: i64,
 }
 
 impl BulkCtx {
@@ -53,12 +34,17 @@ impl BulkCtx {
         client.get_connection()
     }
 
-    pub(crate) fn new(req: actix_web::HttpRequest, config: web::Data<AppConfig>) -> BulkCtx {
+    pub(crate) fn new(
+        req: actix_web::HttpRequest,
+        config: web::Data<AppConfig>,
+        language: Option<String>,
+    ) -> BulkCtx {
         BulkCtx {
             req,
             config,
             current_tenant_path: Err(ErrorKind::Unexpected),
             current_website: Err(ErrorKind::Unexpected),
+            language,
         }
     }
 
@@ -213,7 +199,10 @@ impl BulkCtx {
                         "/" => Ok("".to_string()),
                         path => Ok(path.to_string()),
                     },
-                    Err(_) => Err(ErrorKind::NoTenant),
+                    Err(e) => {
+                        debug!(target: "apex", "========={}", e);
+                        Err(ErrorKind::NoTenant)
+                    }
                 }
             }
             StatusCode::NOT_FOUND => Err(ErrorKind::NoTenant),
@@ -292,101 +281,44 @@ impl BulkCtx {
     }
 
     async fn try_authenticate(&mut self) -> Result<String, ErrorKind> {
-        match self.config.session_cookie_name.as_ref() {
-            Some(name) => match self.req.cookie(&name) {
-                Some(value) => match Uuid::parse_str(value.value()) {
-                    Ok(session_id) => {
-                        let session_id = session_id.to_hyphenated().to_string();
-                        let signature_name = self
-                            .config
-                            .session_cookie_sig_name
-                            .as_ref()
-                            .expect("Session cookie configured without signature name");
-                        let client_sig = self
-                            .req
-                            .cookie(&signature_name)
-                            .expect("Session cookie without signature");
-                        let secret = self
-                            .config
-                            .session_secret
-                            .as_ref()
-                            .expect("No session secret set");
-                        let key =
-                            hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, &secret.as_bytes());
-
-                        let sign = hmac::sign(&key, format!("{}={}", name, session_id).as_bytes());
-                        // https://github.com/tj/node-cookie-signature/blob/master/index.js#L23
-                        let generated_sig = base64::encode(&sign)
-                            .replace('/', "_")
-                            .replace('+', "-")
-                            .replace('=', "");
-
-                        if generated_sig == client_sig.value() {
-                            let token = self.retrieve_and_validate_token(&session_id).await?;
-                            Ok(token)
-                        } else {
-                            Err(ErrorKind::SecurityError(
-                                "Invalid cookie signature value".into(),
-                            ))
-                        }
-                    }
-                    Err(_) => Err(ErrorKind::Msg("Invalid session cookie format".into())),
-                },
-                None => Err(ErrorKind::Msg("No session cookie in request".into())),
-            },
-            None => Err(ErrorKind::Msg("No session cookie name configured".into())),
-        }
+        let session_id = session_id(&self.req)?;
+        let token = self.retrieve_and_validate_token(&session_id).await?;
+        Ok(token)
     }
 
     async fn retrieve_and_validate_token(&mut self, session_id: &str) -> Result<String, ErrorKind> {
-        let enc_token = self
-            .config
-            .jwt_encryption_token
-            .as_ref()
-            .expect("No JWT encryption token");
-
         let mut redis = BulkCtx::create_redis_consumer(&self.config.redis_url)
             .expect("Failed to connect to redis");
-        let value: String = redis
-            .get(session_id)
-            .map_err(|_| ErrorKind::Msg(format!("Session {} not found in redis", session_id)))?;
-        let token: RedisSession = serde_json::from_str(&value)
-            .map_err(|_| ErrorKind::ParserError("Unexpected session value".into()))?;
+        let token = retrieve_session(&self.config, session_id).await?;
 
-        let jwt = decode::<Claims>(
-            &token.user_token,
-            &DecodingKey::from_secret(enc_token.as_ref()),
-            &Validation::new(Algorithm::HS512),
-        )
-        .map_err(|e| {
-            warn!(target: "apex", "Error decoding token: {} for token {}", e, token.user_token);
-            ErrorKind::SecurityError("Invalid JWT signature".into())
-        })?;
-
-        if chrono::Utc::now() >= chrono::Utc.timestamp(jwt.claims.exp, 0) {
-            return match self
-                .refresh_token(&token.user_token, &token.refresh_token)
-                .await
-            {
-                Ok(new_token) => {
-                    let next_token = RedisSession {
-                        refresh_token: new_token.refresh_token,
-                        user_token: new_token.access_token.clone(),
-                        ..token
-                    };
-                    let next_token =
-                        serde_json::to_string(&next_token).expect("Error serializing new token");
-                    let _: () = redis
-                        .set(session_id, &next_token)
-                        .expect("Error storing refreshed token");
-                    Ok(new_token.access_token)
+        match session_info(session_id).await {
+            Ok(claims) => {
+                debug!(target: "apex", "Verified JWT - exp: {}, curr: {}", chrono::Utc.timestamp(claims.exp, 0), chrono::Utc::now());
+                Ok(token.user_token)
+            }
+            Err(ErrorKind::ExpiredSession) => {
+                match self
+                    .refresh_token(&token.user_token, &token.refresh_token)
+                    .await
+                {
+                    Ok(new_token) => {
+                        let next_token = RedisSession {
+                            refresh_token: new_token.refresh_token,
+                            user_token: new_token.access_token.clone(),
+                            ..token
+                        };
+                        let next_token = serde_json::to_string(&next_token)
+                            .expect("Error serializing new token");
+                        let _: () = redis
+                            .set(session_id, &next_token)
+                            .expect("Error storing refreshed token");
+                        Ok(new_token.access_token)
+                    }
+                    Err(_) => Err(ErrorKind::SecurityError("Expired token".into())),
                 }
-                Err(_) => Err(ErrorKind::SecurityError("Expired token".into())),
-            };
+            }
+            Err(e) => Err(e),
         }
-
-        info!(target: "apex", "Verified JWT - exp: {}, curr: {}", chrono::Utc.timestamp(jwt.claims.exp, 0), chrono::Utc::now());
-        Ok(token.user_token)
     }
 
     async fn refresh_token(

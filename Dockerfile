@@ -26,6 +26,7 @@ COPY --from=builder \
     /usr/src/app/target/release/server \
     /usr/src/app/target/release/importer \
     /usr/src/app/target/release/importer_redis \
+    /usr/src/app/target/release/invalidator_redis \
     /usr/src/app/target/release/migrate \
     /usr/local/bin/
 

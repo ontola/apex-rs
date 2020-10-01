@@ -9,6 +9,7 @@ mod responses;
 pub(crate) mod serialization;
 mod server;
 mod service_info;
+pub(crate) mod sessions;
 mod show_resource;
 pub(crate) mod ua;
 mod update;

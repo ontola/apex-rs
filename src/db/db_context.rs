@@ -18,6 +18,7 @@ pub struct DbContext<'a> {
     pub datatype_map: IRIMapping,
     pub language_map: IRIMapping,
     pub resource_map: BiMap<String, i64>,
+    pub lang: Option<String>,
     pub lookup_table: LookupTable,
 }
 
@@ -39,7 +40,11 @@ impl<'a> DbContext<'a> {
             .expect("Failed to get connection from pool")
     }
 
-    pub fn new(db_pool: &DbPool) -> DbContext {
+    pub fn new(db_pool: &'a DbPool) -> DbContext<'a> {
+        DbContext::new_with_lang(db_pool, None)
+    }
+
+    pub fn new_with_lang(db_pool: &'a DbPool, lang: Option<String>) -> DbContext<'a> {
         let config = get_config(&db_pool).unwrap();
 
         DbContext {
@@ -49,6 +54,7 @@ impl<'a> DbContext<'a> {
             language_map: get_languages(&db_pool),
             resource_map: BiMap::new(),
             lookup_table: LookupTable::new(config.seed),
+            lang,
             config,
         }
     }

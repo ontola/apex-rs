@@ -19,6 +19,7 @@ table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         cache_control -> Int2,
+        language -> Varchar,
     }
 }
 
