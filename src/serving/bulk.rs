@@ -12,13 +12,14 @@ use crate::reporting::reporter::humanize;
 use crate::serving::bulk_ctx::BulkCtx;
 use crate::serving::response_type::{ResponseType, NQUADS_MIME, NTRIPLES_MIME};
 use crate::serving::responses::set_default_headers;
+use crate::serving::route::route;
 use crate::serving::serialization::{
     bulk_result_to_hextuples, bulk_result_to_nquads, bulk_result_to_ntriples,
 };
 use crate::serving::sessions::{session_id, session_info};
 use actix_http::error::BlockingError;
 use actix_web::client::SendRequestError;
-use actix_web::http::header;
+use actix_web::http::{header, Method};
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
 use log::Level;
@@ -54,10 +55,10 @@ pub(crate) struct SPITenantFinderResponse {
     pub iri_prefix: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct SPIResourceResponseItem {
     iri: String,
-    status: i16,
+    status: u16,
     cache: CacheControl,
     language: Option<String>,
     body: Option<String>,
@@ -71,7 +72,7 @@ pub(crate) struct SPIError {
 
 pub(crate) struct Resource {
     iri: String,
-    status: i16,
+    status: u16,
     cache_control: CacheControl,
     data: HashModel,
 }
@@ -229,7 +230,7 @@ pub(crate) async fn bulk<'a>(
     set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
 }
 
-fn status_code_statement(lookup_table: &mut LookupTable, iri: &str, status: i16) -> Statement {
+fn status_code_statement(lookup_table: &mut LookupTable, iri: &str, status: u16) -> Statement {
     Statement {
         subject: lookup_table.ensure_value(iri),
         predicate: lookup_table.ensure_value("http://www.w3.org/2011/http#statusCode"),
@@ -240,11 +241,93 @@ fn status_code_statement(lookup_table: &mut LookupTable, iri: &str, status: i16)
     }
 }
 
-async fn authorize_resources(
+async fn authorize_partitioned(
     req: &mut BulkCtx,
     resources: &Vec<String>,
     resources_in_store: &Vec<String>,
 ) -> Result<Vec<SPIResourceResponseItem>, ErrorKind> {
+    let mut bulk_resources = Vec::new();
+    let mut http_resources = Vec::new();
+
+    for resource in resources {
+        match route(&req.config.cluster_config, resource)? {
+            Some(_) => http_resources.push(resource.clone()),
+            None => bulk_resources.push(resource.clone()),
+        }
+    }
+
+    let mut bulk_result = authorize_via_bulk(req, &bulk_resources, resources_in_store).await?;
+    let mut http_result = authorize_via_http(req, &http_resources).await?;
+
+    bulk_result.append(&mut http_result);
+
+    Ok(bulk_result)
+}
+
+async fn authorize_via_http(
+    req: &mut BulkCtx,
+    resources: &Vec<String>,
+) -> Result<Vec<SPIResourceResponseItem>, ErrorKind> {
+    if resources.len() == 0 {
+        return Ok(Vec::with_capacity(0));
+    }
+    let mut response_items = Vec::with_capacity(resources.len());
+
+    let config = req.config.cluster_config.clone();
+    for resource in resources {
+        let url = route(&config, resource)?.unwrap();
+        let backend_req = req
+            .setup_proxy_request(Method::GET, url)
+            .await?
+            .header(header::ACCEPT, "application/hex+x-ndjson");
+        let response = backend_req.send().await;
+
+        match response {
+            Err(SendRequestError::Timeout) => {
+                debug!(target: "apex", "Timeout waiting for sending bulk authorize");
+                return Err(ErrorKind::Timeout);
+            }
+            Err(e) => {
+                debug!(target: "apex", "Unexpected error sending bulk authorize: {}", e);
+                return Err(ErrorKind::Unexpected);
+            }
+            Ok(mut response) => {
+                let body = match response.body().limit(100_000_000).await {
+                    Ok(body) => String::from_utf8(body.to_vec()).map_err(|_| {
+                        ErrorKind::ParserError("Error decoding http response body as utf-8".into())
+                    })?,
+                    Err(e) => {
+                        warn!(target: "apex", "Error while decoding backend auth response: {}", e);
+
+                        return Err(ErrorKind::Unexpected);
+                    }
+                };
+
+                let item = SPIResourceResponseItem {
+                    body: Some(body),
+                    cache: CacheControl::Private,
+                    iri: resource.into(),
+                    language: None,
+                    status: response.status().as_u16(),
+                };
+
+                response_items.push(item);
+            }
+        }
+    }
+
+    Ok(response_items)
+}
+
+async fn authorize_via_bulk(
+    req: &mut BulkCtx,
+    resources: &Vec<String>,
+    resources_in_store: &Vec<String>,
+) -> Result<Vec<SPIResourceResponseItem>, ErrorKind> {
+    if resources.len() == 0 {
+        return Ok(Vec::with_capacity(0));
+    }
+
     let website = req.website()?;
     debug!("Using website: {}", website);
 
@@ -253,7 +336,8 @@ async fn authorize_resources(
     trace!(target: "apex", "Tenant: {}", tenant_path);
 
     // Create request builder and send request
-    let backend_req = req.setup_proxy_request().await?;
+    let bulk_url = req.bulk_endpoint_url().await?;
+    let backend_req = req.setup_proxy_request(Method::POST, bulk_url).await?;
     let request_body = req.compose_spi_bulk_payload(&resources, &resources_in_store);
     let response = backend_req.send_json(&request_body).await;
 
@@ -407,7 +491,7 @@ async fn process_private_and_missing(
 
     trace!("Authorize / fetch {} documents", non_public_resources.len());
     let auth_result =
-        match authorize_resources(&mut req, non_public_resources, &resources_in_store).await {
+        match authorize_partitioned(&mut req, non_public_resources, &resources_in_store).await {
             Ok(data) => data,
             Err(ErrorKind::NoTenant) => {
                 debug!(target: "apex", "Couldn't determine tenant");
@@ -531,7 +615,7 @@ fn docset_to_model(docset: DocumentSet) -> HashModel {
 fn update_or_insert_doc(
     bulk_docs: &mut Vec<Resource>,
     iri: &str,
-    status: i16,
+    status: u16,
     cache: CacheControl,
     data: HashModel,
 ) {

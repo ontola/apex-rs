@@ -1,4 +1,5 @@
 use std::env;
+use std::str::FromStr;
 
 #[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Debug)]
 pub struct AppConfig {
@@ -10,6 +11,7 @@ pub struct AppConfig {
     pub client_secret: Option<String>,
     /// The timeout for data requests
     pub data_server_timeout: u64,
+    pub cluster_config: ClusterConfig,
     /// The url of the server to retrieve the data from
     pub data_server_url: Option<String>,
     /// The connection string of the database
@@ -33,6 +35,17 @@ pub struct AppConfig {
     pub session_secret: Option<String>,
 }
 
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Debug)]
+pub struct ClusterConfig {
+    pub cluster_domain: String,
+    pub cluster_url_base: String,
+    pub default_backend_service_name: String,
+    pub default_service_port: Option<u16>,
+    pub default_service_proto: String,
+    pub namespace: String,
+    pub svc_dns_prefix: String,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let mut database_name = env::var("APEX_DATABASE_NAME").unwrap_or("apex_rs".into());
@@ -44,7 +57,6 @@ impl Default for AppConfig {
                     None
                 }
                 Ok(postgresql_password) => {
-                    warn!("No ");
                     let postgresql_username =
                         env::var("POSTGRESQL_USERNAME").unwrap_or("postgres".into());
                     let postgresql_address =
@@ -75,6 +87,7 @@ impl Default for AppConfig {
             client_secret: env::var("ARGU_APP_SECRET")
                 .or_else(|_| env::var("LIBRO_APP_SECRET"))
                 .ok(),
+            cluster_config: ClusterConfig::default(),
             data_server_timeout: env::var("PROXY_TIMEOUT")
                 .unwrap_or("20".into())
                 .parse::<u64>()
@@ -103,5 +116,49 @@ impl AppConfig {
     pub fn create_redis_consumer(&self) -> redis::RedisResult<redis::Connection> {
         let client = redis::Client::open(self.redis_url.clone())?;
         client.get_connection()
+    }
+}
+
+fn dot_prefix(value: &str) -> String {
+    if value.len() > 0 {
+        format!(".{}", value)
+    } else {
+        String::from(value)
+    }
+}
+
+impl Default for ClusterConfig {
+    fn default() -> ClusterConfig {
+        let default_port = 3000u16;
+        let default_service_port = env::var("DEFAULT_SERVICE_PORT").map_or_else(
+            |_| default_port,
+            |port| u16::from_str(&port).unwrap_or(default_port),
+        );
+
+        let namespace = env::var("NAMESPACE").unwrap_or("".into());
+        let svc_dns_prefix = env::var("SERVICE_DNS_PREFIX").unwrap_or("svc".into());
+        let svc_dns_prefix_insert = dot_prefix(&svc_dns_prefix);
+        let default_cluster = String::from("cluster.local");
+        let mut cluster_domain = env::var("CLUSTER_DOMAIN").unwrap_or(default_cluster.clone());
+        if cluster_domain.len() == 0 {
+            cluster_domain = default_cluster;
+        }
+        let fallback = format!(
+            "{}{}.{}",
+            dot_prefix(&namespace),
+            svc_dns_prefix_insert,
+            cluster_domain
+        );
+
+        ClusterConfig {
+            cluster_domain,
+            cluster_url_base: env::var("CLUSTER_URL_BASE").unwrap_or(fallback),
+            default_backend_service_name: env::var("DEFAULT_BACKEND_SVC_NAME")
+                .unwrap_or("argu".into()),
+            default_service_port: Some(default_service_port),
+            default_service_proto: env::var("DEFAULT_SERVICE_PROTO").unwrap_or("http".into()),
+            namespace,
+            svc_dns_prefix,
+        }
     }
 }

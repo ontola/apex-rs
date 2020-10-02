@@ -13,6 +13,7 @@ use crate::serving::ua::bulk_ua;
 use actix_http::client::SendRequestError;
 use actix_http::http::{header, StatusCode};
 use actix_web::client::{Client, ClientRequest};
+use actix_web::http::Method;
 use actix_web::web;
 use chrono::TimeZone;
 use itertools::Itertools;
@@ -96,17 +97,27 @@ impl BulkCtx {
         }
     }
 
-    pub(crate) async fn setup_proxy_request(&mut self) -> Result<ClientRequest, ErrorKind> {
+    pub(crate) async fn bulk_endpoint_url(&mut self) -> Result<String, ErrorKind> {
+        let endpoint = format!(
+            "{}{}/spi/bulk",
+            self.config
+                .data_server_url
+                .clone()
+                .expect("No data server url set"),
+            self.tenant_path().await?
+        );
+
+        Ok(endpoint)
+    }
+
+    pub(crate) async fn setup_proxy_request(
+        &mut self,
+        method: Method,
+        endpoint_url: String,
+    ) -> Result<ClientRequest, ErrorKind> {
         let client = Client::default();
         let mut backend_req = client
-            .post(format!(
-                "{}{}/spi/bulk",
-                self.config
-                    .data_server_url
-                    .clone()
-                    .expect("No data server url set"),
-                self.tenant_path().await?
-            ))
+            .request(method, endpoint_url)
             .timeout(Duration::from_secs(self.config.data_server_timeout.clone()))
             .header("Website-IRI", self.website()?);
 
@@ -199,10 +210,7 @@ impl BulkCtx {
                         "/" => Ok("".to_string()),
                         path => Ok(path.to_string()),
                     },
-                    Err(e) => {
-                        debug!(target: "apex", "========={}", e);
-                        Err(ErrorKind::NoTenant)
-                    }
+                    Err(_) => Err(ErrorKind::NoTenant),
                 }
             }
             StatusCode::NOT_FOUND => Err(ErrorKind::NoTenant),
