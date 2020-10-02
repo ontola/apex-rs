@@ -495,7 +495,27 @@ async fn process_private_and_missing(
             Ok(data) => data,
             Err(ErrorKind::NoTenant) => {
                 debug!(target: "apex", "Couldn't determine tenant");
-                return Err(HttpResponse::BadRequest().finish());
+                let mut body = bulk_docs
+                    .iter()
+                    .map(|r| Resource {
+                        iri: r.iri.clone(),
+                        status: 404,
+                        cache_control: CacheControl::Private,
+                        data: vec![],
+                    })
+                    .collect::<Vec<Resource>>();
+                bulk_docs.clear();
+                bulk_docs.append(&mut body);
+
+                return Ok((
+                    lookup_table,
+                    AuthorizeTiming {
+                        authorize_fetch_time: Duration::new(0, 0),
+                        authorize_finish_time: Duration::new(0, 0),
+                        authorize_parse_time: Duration::new(0, 0),
+                        authorize_process_time: Duration::new(0, 0),
+                    },
+                ));
             }
             Err(ErrorKind::ParserError(msg)) => {
                 debug!(target: "apex", "Error while authorizing: {}", msg);
