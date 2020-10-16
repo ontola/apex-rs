@@ -36,13 +36,18 @@ pub fn doc_by_iri<'a>(
                 .find(|(_, v)| **v == p.datatype_id)
                 .unwrap()
                 .0;
+            let empty = String::from(EMPTY_STRING);
+            let language = match p.language_id {
+                Some(id) => ctx.language_map.get_by_right(&id).unwrap_or(&empty),
+                None => &empty,
+            };
 
             props.push(Statement::new(
                 ctx.lookup_table.ensure_value(&resource.iri),
                 ctx.lookup_table.ensure_value(predicate),
                 p.object_id.expect("Property without object_id").into(),
                 ctx.lookup_table.ensure_value(datatype),
-                ctx.lookup_table.ensure_value(&String::from(EMPTY_STRING)), // p.language.clone()
+                ctx.lookup_table.ensure_value(language),
                 ctx.lookup_table.ensure_value(&String::from(EMPTY_STRING)),
             ));
         }
