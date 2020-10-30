@@ -10,5 +10,5 @@ CREATE TABLE public._apex_config
         OIDS = FALSE
     );
 
-ALTER TABLE public._apex_config
-    OWNER to postgres;
+-- ALTER TABLE public._apex_config
+--     OWNER to postgres;

@@ -10,8 +10,8 @@ CREATE TABLE public.objects
         OIDS = FALSE
     );
 
-ALTER TABLE public.objects
-    OWNER to postgres;
+-- ALTER TABLE public.objects
+--     OWNER to postgres;
 
 
 ALTER TABLE public.properties
