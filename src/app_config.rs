@@ -61,9 +61,15 @@ impl Default for AppConfig {
                         env::var("POSTGRESQL_USERNAME").unwrap_or("postgres".into());
                     let postgresql_address =
                         env::var("POSTGRESQL_ADDRESS").unwrap_or("localhost".into());
+                    let postfix = env::var("APEX_POSTGRESQL_POSTFIX").unwrap_or("".into());
+
                     let connstr = format!(
-                        "postgres://{}:{}@{}/{}",
-                        postgresql_username, postgresql_password, postgresql_address, database_name
+                        "postgres://{}:{}@{}/{}{}",
+                        postgresql_username,
+                        postgresql_password,
+                        postgresql_address,
+                        database_name,
+                        postfix
                     );
 
                     Some(connstr.into())
@@ -75,6 +81,9 @@ impl Default for AppConfig {
                 .clone()
                 .split("/")
                 .last()
+                .expect("Couldn't determine database name")
+                .split("?")
+                .nth(0)
                 .expect("Couldn't determine database name")
                 .into();
         }
