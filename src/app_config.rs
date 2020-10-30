@@ -1,3 +1,4 @@
+use redis::IntoConnectionInfo;
 use std::env;
 use std::str::FromStr;
 
@@ -129,7 +130,15 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn create_redis_consumer(&self) -> redis::RedisResult<redis::Connection> {
-        let client = redis::Client::open(self.redis_url.clone())?;
+        let url = self.redis_url.clone();
+        let mut connection_info = url.into_connection_info()?;
+        if let Some(uname) = &connection_info.username {
+            if uname == "default" {
+                connection_info.username = None;
+            }
+        }
+
+        let client = redis::Client::open(connection_info)?;
         client.get_connection()
     }
 }

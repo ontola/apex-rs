@@ -10,6 +10,7 @@ edition = "2018"
 actix-http = "1.0.1"
 actix-rt = "1.1.1"
 actix-web = "2.0.0"
+async-native-tls = { version = "0.3", default-features = false, features = ["runtime-tokio"] }
 base64 = "0.12.1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "2.33.1"
@@ -28,7 +29,7 @@ tokio = { version = "0.2.19", features = ["full"] }
 futures = "0.3.5"
 futures-util = "0.3.5"
 percent-encoding = "2.1.0"
-redis = { version = "0.17.0", features = ["connection-manager", "tokio-rt-core"] }
+redis = { version = "0.17.0",  default-features = false, features = ["connection-manager", "tokio-rt-core", "tls", "tokio-tls-comp"] }
 ring = "0.16.15"
 rio_api = "0.4.0"
 rio_turtle = "0.4.0"

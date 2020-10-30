@@ -5,6 +5,7 @@ use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
 use crate::importing::importer::process_invalidate;
 use crate::importing::parsing::{parse_hndjson, DocumentSet};
+use crate::importing::redis::create_redis_consumer;
 use diesel::Connection;
 use log::Level;
 use std::env;
@@ -114,11 +115,6 @@ pub(crate) async fn process_message(
             Ok(MessageTiming::new())
         })
         .map_err(|_| ErrorKind::Unexpected)
-}
-
-pub(crate) fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
-    let client = redis::Client::open(env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into()))?;
-    client.get_connection()
 }
 
 fn is_invalidate_all_cmd(ctx: &mut DbContext, model: &DocumentSet) -> bool {

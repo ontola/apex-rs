@@ -5,6 +5,7 @@ use crate::importing::events::MessageTiming;
 use crate::importing::importer::{process_invalidate, process_message};
 use crate::importing::parsing::{parse_hndjson, DocumentSet};
 use log::Level;
+use redis::IntoConnectionInfo;
 use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
@@ -94,7 +95,15 @@ pub async fn import_redis(
 }
 
 pub(crate) fn create_redis_consumer() -> redis::RedisResult<redis::Connection> {
-    let client = redis::Client::open(env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into()))?;
+    let url = env::var("REDIS_URL").unwrap_or("redis://127.0.0.1/".into());
+    let mut connection_info = url.into_connection_info()?;
+    if let Some(uname) = &connection_info.username {
+        if uname == "default" {
+            connection_info.username = None;
+        }
+    }
+
+    let client = redis::Client::open(connection_info)?;
     client.get_connection()
 }
 

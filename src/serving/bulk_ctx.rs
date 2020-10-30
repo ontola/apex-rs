@@ -30,11 +30,6 @@ pub(crate) struct BulkCtx {
 }
 
 impl BulkCtx {
-    fn create_redis_consumer(url: &str) -> redis::RedisResult<redis::Connection> {
-        let client = redis::Client::open(url)?;
-        client.get_connection()
-    }
-
     pub(crate) fn new(
         req: actix_web::HttpRequest,
         config: web::Data<AppConfig>,
@@ -295,7 +290,9 @@ impl BulkCtx {
     }
 
     async fn retrieve_and_validate_token(&mut self, session_id: &str) -> Result<String, ErrorKind> {
-        let mut redis = BulkCtx::create_redis_consumer(&self.config.redis_url)
+        let mut redis = self
+            .config
+            .create_redis_consumer()
             .expect("Failed to connect to redis");
         let token = retrieve_session(&self.config, session_id).await?;
 

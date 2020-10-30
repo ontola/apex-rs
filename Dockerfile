@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release
 
 FROM debian:buster
-RUN apt-get update && apt-get install -y ca-certificates libsasl2-2 libpq5
+RUN apt-get update && apt-get install -y ca-certificates libsasl2-2 libpq5 openssl
 # RUN apk add cmake librdkafka libsasl libpq
 # RUN apk --no-cache add ca-certificates
 # RUN addgroup -S app && adduser -S -G app app
