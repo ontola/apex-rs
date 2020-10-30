@@ -60,7 +60,7 @@ fn setup() -> Result<(), String> {
     let mut connstr = Url::parse(&db_url).unwrap();
     connstr.set_path("");
     // Wait until db is up
-    DbContext::default_pool(Some(connstr.to_string()))?;
+    DbContext::default_pool(Some(connstr.to_string()), 1)?;
 
     match PgConnection::establish(&connstr.to_string()) {
         Ok(c) => {
@@ -76,7 +76,7 @@ fn setup() -> Result<(), String> {
         }
     }
 
-    let pool = DbContext::default_pool(config.database_url.clone())?;
+    let pool = DbContext::default_pool(config.database_url.clone(), config.database_pool_size)?;
 
     match embedded_migrations::run_with_output(
         &pool.get().expect("Can't connect to db"),

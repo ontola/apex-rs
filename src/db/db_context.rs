@@ -59,17 +59,18 @@ impl<'a> DbContext<'a> {
         }
     }
 
-    pub(crate) fn custom_pool(connspec: &str) -> DbPool {
+    pub(crate) fn custom_pool(connspec: &str, max_size: u32) -> DbPool {
         let manager = ConnectionManager::<PgConnection>::new(connspec);
 
         r2d2::Pool::builder()
+            .max_size(max_size)
             .build(manager)
             .expect("Failed to create pool.")
     }
 
-    pub fn default_pool(database_url: Option<String>) -> Result<DbPool, String> {
+    pub fn default_pool(database_url: Option<String>, max_size: u32) -> Result<DbPool, String> {
         match database_url {
-            Some(database_url) => Ok(DbContext::custom_pool(database_url.as_str())),
+            Some(database_url) => Ok(DbContext::custom_pool(database_url.as_str(), max_size)),
             None => bail!(String::from("No DB connection string or missing parts")),
         }
     }

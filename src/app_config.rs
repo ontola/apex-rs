@@ -18,6 +18,8 @@ pub struct AppConfig {
     pub database_url: Option<String>,
     /// The name of the database
     pub database_name: String,
+    /// The maximum pool size
+    pub database_pool_size: u32,
     /// Controls whether persistent storage is used for data.
     pub disable_persistence: bool,
     /// Enable to allow write commands via the HTTP interface
@@ -104,6 +106,10 @@ impl Default for AppConfig {
             data_server_url: env::var("ARGU_API_URL").ok(),
             database_url,
             database_name,
+            database_pool_size: env::var("POOL_SIZE")
+                .unwrap_or("4".into())
+                .parse::<u32>()
+                .unwrap(),
             disable_persistence: env::var("DISABLE_PERSISTENCE")
                 .and_then(|v| Ok(v == "true".to_string()))
                 .unwrap_or_else(|_| false),

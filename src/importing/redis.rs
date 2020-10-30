@@ -17,7 +17,7 @@ pub async fn import_redis(
     println!("Initialized redis config");
 
     let config = AppConfig::default();
-    let pool = DbContext::default_pool(config.database_url)?;
+    let pool = DbContext::default_pool(config.database_url, config.database_pool_size)?;
     let mut ctx = DbContext::new(&pool);
 
     let mut pubsub = consumer.as_pubsub();

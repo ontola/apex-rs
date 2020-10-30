@@ -63,10 +63,11 @@ pub async fn serve() -> std::io::Result<()> {
     if cfg!(debug_assertions) {
         print_config(&config);
     }
-    let pool = DbContext::default_pool(config.database_url.clone()).map_err(|e| {
-        error!(target: "apex", "{}", e);
-        ErrorKind::Other
-    })?;
+    let pool = DbContext::default_pool(config.database_url.clone(), config.database_pool_size)
+        .map_err(|e| {
+            error!(target: "apex", "{}", e);
+            ErrorKind::Other
+        })?;
     let address = format!("{}:{}", config.binding, config.port);
 
     HttpServer::new(move || {
