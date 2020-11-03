@@ -8,6 +8,7 @@ use crate::importing::parsing::{parse_hndjson, DocumentSet};
 use crate::importing::redis::create_redis_consumer;
 use diesel::Connection;
 use log::Level;
+use redis::ConnectionLike;
 use std::env;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
@@ -16,83 +17,123 @@ use tokio::task;
 pub async fn invalidator_redis(
     updates: &mut Sender<Result<MessageTiming, ErrorKind>>,
 ) -> Result<(), String> {
-    let mut consumer = create_redis_consumer().expect("Failed to create redis consumer");
-    println!("Initialized redis config");
-
-    let config = AppConfig::default();
-    let pool = DbContext::default_pool(config.database_url, config.database_pool_size)?;
-    let mut ctx = DbContext::new(&pool);
-
-    let mut pubsub = consumer.as_pubsub();
-    let channel = env::var("CACHE_CHANNEL").expect("No redis channel set");
-    pubsub
-        .subscribe(&channel)
-        .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", &channel));
-    pubsub
-        .set_read_timeout(Some(Duration::from_millis(200)))
-        .unwrap();
-
-    loop {
-        let last_listen_time = Instant::now();
-
-        match pubsub.get_message() {
-            Ok(msg) => {
-                let msg_poll_time = Instant::now().duration_since(last_listen_time);
-                match msg.get_payload::<Vec<u8>>() {
-                    Err(_) => {
-                        if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
-                            error!(target: "apex", "Error while sending unexpected error to reporter: {}", e);
-                        }
-                        continue;
-                    }
-                    Ok(p) => {
-                        if log_enabled!(Level::Trace) {
-                            trace!(
-                                "Recieved message:\n >>>>>{}<<<<<",
-                                String::from_utf8(p.clone()).expect("Invalid message")
-                            );
-                        }
-                        let report = match parse_hndjson(&mut ctx.lookup_table, p.as_slice()) {
-                            Ok(model) => {
-                                let result = if is_invalidate_all_cmd(&mut ctx, &model) {
-                                    process_invalidate(&mut ctx).await
-                                } else {
-                                    process_message(&mut ctx, model).await
-                                };
-
-                                match result {
-                                    Ok(timing) => Ok(MessageTiming {
-                                        poll_time: msg_poll_time,
-                                        ..timing
-                                    }),
-                                    Err(e) => Err(e),
-                                }
-                            }
-                            Err(e) => {
-                                error!(target: "apex", "Unexpected error: {}", e.description());
-                                Err(e)
-                            }
-                        };
-
-                        if let Err(e) = updates.send(report).await {
-                            error!(target: "apex", "Error while sending stats to reporter: {}", e);
-                        }
-                    }
-                }
-            }
+    'connection: loop {
+        let mut consumer = match create_redis_consumer() {
+            Ok(c) => c,
             Err(e) => {
-                if e.is_timeout() {
-                    task::yield_now().await;
-                    continue;
-                }
-
-                if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
-                    error!(target: "apex", "Error while sending error to reporter: {}", e);
-                }
+                warn!(target: "apex", "Failed to create redis consumer: {}", e);
+                continue;
             }
+        };
+        println!("Initialized redis config");
+
+        if consumer.is_open() {
+            println!("Connected to redis");
+        } else {
+            println!("Not connected to redis");
         }
 
-        task::yield_now().await;
+        let config = AppConfig::default();
+        let pool = DbContext::default_pool(config.database_url, config.database_pool_size)?;
+        let mut ctx = DbContext::new(&pool);
+
+        let mut pubsub = consumer.as_pubsub();
+        let channel = env::var("CACHE_CHANNEL").expect("No redis channel set");
+        pubsub
+            .subscribe(&channel)
+            .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", &channel));
+        pubsub
+            .set_read_timeout(Some(Duration::from_millis(2000)))
+            .unwrap();
+
+        loop {
+            let last_listen_time = Instant::now();
+
+            match pubsub.get_message() {
+                Ok(msg) => {
+                    let msg_poll_time = Instant::now().duration_since(last_listen_time);
+                    match msg.get_payload::<Vec<u8>>() {
+                        Err(_) => {
+                            if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                                error!(target: "apex", "Error while sending unexpected error to reporter: {}", e);
+                            }
+                            continue;
+                        }
+                        Ok(p) => {
+                            if log_enabled!(Level::Trace) {
+                                trace!(
+                                    "Recieved message:\n >>>>>{}<<<<<",
+                                    String::from_utf8(p.clone()).expect("Invalid message")
+                                );
+                            }
+                            let report = match parse_hndjson(&mut ctx.lookup_table, p.as_slice()) {
+                                Ok(model) => {
+                                    let result = if is_invalidate_all_cmd(&mut ctx, &model) {
+                                        process_invalidate(&mut ctx).await
+                                    } else {
+                                        process_message(&mut ctx, model).await
+                                    };
+
+                                    match result {
+                                        Ok(timing) => Ok(MessageTiming {
+                                            poll_time: msg_poll_time,
+                                            ..timing
+                                        }),
+                                        Err(e) => Err(e),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(target: "apex", "Unexpected error: {}", e.description());
+                                    Err(e)
+                                }
+                            };
+
+                            if let Err(e) = updates.send(report).await {
+                                error!(target: "apex", "Error while sending stats to reporter: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    if e.is_timeout() {
+                        task::yield_now().await;
+                        continue;
+                    }
+
+                    let mut reconnect = false;
+
+                    if e.is_connection_dropped() {
+                        warn!(target: "apex", "Redis connection dropped ({})", e);
+                        reconnect = true;
+                    } else if e.is_connection_refusal() {
+                        warn!(target: "apex", "Redis connection refused ({})", e);
+                        reconnect = true;
+                    } else if e.is_cluster_error() {
+                        warn!(target: "apex", "Redis cluster error ({})", e);
+                        reconnect = true;
+                    } else if e.is_io_error() {
+                        warn!(target: "apex", "Redis IO error, trying to resubscribe ({})", e);
+                        reconnect = true;
+                    } else {
+                        error!(target: "apex", "Unknown redis error: {}", e);
+                    }
+
+                    if reconnect == true {
+                        warn!(target: "apex", "Reconnecting..");
+                        task::yield_now().await;
+                        continue 'connection;
+                    }
+
+                    task::yield_now().await;
+
+                    if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                        error!(target: "apex", "Error while sending error to reporter: {}", e);
+                    }
+                }
+            }
+
+            task::yield_now().await;
+        }
     }
 }
 

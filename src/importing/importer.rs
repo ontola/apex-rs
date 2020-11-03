@@ -47,8 +47,11 @@ pub(crate) async fn process_invalidate(
         .get()
         .unwrap()
         .transaction(|| match delete_all_document_data(&ctx.get_conn()) {
-            Ok(_) => Ok(()),
-            Err(_) => {
+            Ok(_) => {
+                result = Ok(MessageTiming::new());
+                Ok(())
+            }
+            Err(e) => {
                 result = Err(ErrorKind::Unexpected);
                 Err(RollbackTransaction)
             }
