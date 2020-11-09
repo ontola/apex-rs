@@ -8,10 +8,16 @@ where
     }
 
     let mut i = url::Url::parse(&iri).unwrap();
-    if i.fragment().is_some() {
+    let base = if i.fragment().is_some() {
         i.set_fragment(None);
         i.to_string()
     } else {
         i.to_string()
+    };
+
+    if iri.ends_with('/') {
+        base
+    } else {
+        base.trim_end_matches("/").into()
     }
 }
