@@ -8,8 +8,8 @@ use crate::importing::importer::process_message;
 use crate::importing::parsing::{parse_hndjson, DocumentSet};
 use crate::models::Document;
 use crate::rdf::iri_utils::stem_iri;
-use crate::reporting::reporter::humanize;
 use crate::serving::bulk_ctx::BulkCtx;
+use crate::serving::reporter::Reporter;
 use crate::serving::response_type::{ResponseType, NQUADS_MIME, NTRIPLES_MIME};
 use crate::serving::responses::set_default_headers;
 use crate::serving::route::route;
@@ -17,6 +17,7 @@ use crate::serving::serialization::{
     bulk_result_to_hextuples, bulk_result_to_nquads, bulk_result_to_ntriples,
 };
 use crate::serving::sessions::{session_id, session_info};
+use crate::serving::timings::{AuthorizeTiming, BulkTiming};
 use actix_http::error::BlockingError;
 use actix_web::client::SendRequestError;
 use actix_web::http::{header, Method};
@@ -27,7 +28,7 @@ use percent_encoding::percent_decode_str;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct FormData {
@@ -77,37 +78,16 @@ pub(crate) struct Resource {
     data: HashModel,
 }
 
-struct BulkTiming {
-    /// Parsing the request
-    pub parse_time: Duration,
-    /// Checking which resources are in the db
-    pub lookup_time: Duration,
-    /// Figuring out which resources need to be authorized and/or fetched
-    pub sort_time: Duration,
-    pub authorize_timing: Option<AuthorizeTiming>,
-    /// Serializing the response
-    pub serialize_time: Duration,
-}
-
-struct AuthorizeTiming {
-    /// Calling the endpoints for authorization and/or fetching resources
-    pub authorize_fetch_time: Duration,
-    /// Parsing the fetched resources
-    pub authorize_parse_time: Duration,
-    /// Processing the data in the fetched resources (applying and storing)
-    pub authorize_process_time: Duration,
-    /// Consolidating the results back into the collected resources
-    pub authorize_finish_time: Duration,
-}
-
 #[post("/link-lib/bulk")]
 pub(crate) async fn bulk<'a>(
     req: actix_web::HttpRequest,
     pool: web::Data<DbPool>,
     config: web::Data<AppConfig>,
+    reporter: web::Data<Reporter>,
     payload: web::Payload,
 ) -> impl Responder {
     let parse_start = Instant::now();
+    reporter.register_bulk_request();
 
     let pl = pool.clone().into_inner();
 
@@ -132,6 +112,7 @@ pub(crate) async fn bulk<'a>(
         Err(e) => return e,
     };
 
+    reporter.register_bulk_resource_count(resources.len());
     debug!(target: "apex", "Requested {} resources", resources.len());
     if log_enabled!(Level::Trace) {
         trace!(target: "apex", "Resources requested: {}", resources.clone().join(", "));
@@ -150,7 +131,9 @@ pub(crate) async fn bulk<'a>(
 
     let (resources_in_store, private_or_missing) = sort(resources, &mut bulk_docs);
 
-    trace!(target: "apex", "Resources in store: {}, missing: {}", &resources_in_store.join(", "), &private_or_missing.join(", "));
+    if log_enabled!(Level::Trace) {
+        trace!(target: "apex", "Resources in store: {}, missing: {}", &resources_in_store.join(", "), &private_or_missing.join(", "));
+    }
 
     let sort_end = Instant::now();
     let sort_time = sort_end.duration_since(lookup_end);
@@ -217,15 +200,15 @@ pub(crate) async fn bulk<'a>(
     };
     let serialize_time = Instant::now().duration_since(serialize_start);
 
-    // TODO: async send to collection service or something
-    let timing = BulkTiming {
+    let timing = BulkTiming::from_durations(
         parse_time,
         lookup_time,
         sort_time,
         authorize_timing,
         serialize_time,
-    };
-    log_report(timing);
+    );
+    timing.report();
+    reporter.add_bulk_timing(timing);
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
 }
@@ -289,7 +272,7 @@ async fn authorize_via_http(
             }
             Err(e) => {
                 debug!(target: "apex", "Unexpected error sending bulk authorize: {}", e);
-                return Err(ErrorKind::Unexpected);
+                return Err(ErrorKind::Unexpected(e.to_string()));
             }
             Ok(mut response) => {
                 let body = match response.body().limit(100_000_000).await {
@@ -299,7 +282,7 @@ async fn authorize_via_http(
                     Err(e) => {
                         warn!(target: "apex", "Error while decoding backend auth response: {}", e);
 
-                        return Err(ErrorKind::Unexpected);
+                        return Err(ErrorKind::Unexpected(e.to_string()));
                     }
                 };
 
@@ -348,7 +331,7 @@ async fn authorize_via_bulk(
         }
         Err(e) => {
             debug!(target: "apex", "Unexpected error sending bulk authorize: {}", e);
-            Err(ErrorKind::Unexpected)
+            Err(ErrorKind::Unexpected(e.to_string()))
         }
         Ok(mut response) => {
             let body = match response.body().limit(100_000_000).await {
@@ -356,7 +339,7 @@ async fn authorize_via_bulk(
                 Err(e) => {
                     warn!(target: "apex", "Error while decoding backend auth response: {}", e);
 
-                    return Err(ErrorKind::Unexpected);
+                    return Err(ErrorKind::Unexpected(e.to_string()));
                 }
             };
 
@@ -370,63 +353,22 @@ async fn authorize_via_bulk(
                             debug!("Response body from server: {}", output);
                         }
 
-                        Err(ErrorKind::Unexpected)
+                        Err(ErrorKind::Unexpected(e.to_string()))
                     }
                 },
                 _ => match serde_json::from_slice::<SPIError>(&body) {
                     Ok(e) => {
                         warn!(target: "apex", "Bulk authorize error: {} with description: {}", e.error, e.error_description);
-                        Err(ErrorKind::Unexpected)
+                        Err(ErrorKind::Unexpected(e.error))
                     }
                     Err(e) => {
                         error!(target: "apex", "Unexpected error parsing bulk authorize error: {} with body: {}", e, String::from_utf8(body.clone()).unwrap());
-                        Err(ErrorKind::Unexpected)
+                        Err(ErrorKind::Unexpected(e.to_string()))
                     }
                 },
             }
         }
     }
-}
-
-fn log_report(timing: BulkTiming) {
-    let parse_msg = humanize("parse", timing.parse_time);
-    let lookup_msg = humanize("lookup", timing.lookup_time);
-    let sort_msg = humanize("sort", timing.sort_time);
-    let auth_times = match timing.authorize_timing {
-        Some(a) => (
-            a.authorize_fetch_time,
-            a.authorize_parse_time,
-            a.authorize_process_time,
-            a.authorize_finish_time,
-        ),
-        None => (
-            Duration::new(0, 0),
-            Duration::new(0, 0),
-            Duration::new(0, 0),
-            Duration::new(0, 0),
-        ),
-    };
-    let auth_msg = format!(
-        "{}{}{}{}",
-        humanize("auth fetch", auth_times.0),
-        humanize("auth parse", auth_times.1),
-        humanize("auth process", auth_times.2),
-        humanize("auth finish", auth_times.3)
-    );
-    let serialize_msg = humanize("serialize", timing.serialize_time);
-
-    debug!(target: "apex", "Bulk time: {}{}{}{}{}", parse_msg, lookup_msg, sort_msg, auth_msg, serialize_msg);
-    let internal_time = timing.parse_time
-        + timing.lookup_time
-        + timing.sort_time
-        + auth_times.1
-        + auth_times.2
-        + auth_times.3
-        + timing.serialize_time;
-    info!(target: "apex", "Bulk res: {}{}",
-    humanize("internal", internal_time),
-    humanize("external", auth_times.0),
-    );
 }
 
 async fn lookup_resources(
@@ -507,15 +449,7 @@ async fn process_private_and_missing(
                 bulk_docs.clear();
                 bulk_docs.append(&mut body);
 
-                return Ok((
-                    lookup_table,
-                    AuthorizeTiming {
-                        authorize_fetch_time: Duration::new(0, 0),
-                        authorize_finish_time: Duration::new(0, 0),
-                        authorize_parse_time: Duration::new(0, 0),
-                        authorize_process_time: Duration::new(0, 0),
-                    },
-                ));
+                return Ok((lookup_table, AuthorizeTiming::default()));
             }
             Err(ErrorKind::ParserError(msg)) => {
                 debug!(target: "apex", "Error while authorizing: {}", msg);
@@ -608,12 +542,12 @@ async fn process_private_and_missing(
     let authorize_finish_end = Instant::now();
     let authorize_finish_time = authorize_finish_end.duration_since(authorize_process_end);
 
-    let timing = AuthorizeTiming {
+    let timing = AuthorizeTiming::from_durations(
         authorize_fetch_time,
         authorize_parse_time,
         authorize_process_time,
         authorize_finish_time,
-    };
+    );
 
     Ok((lookup_table, timing))
 }

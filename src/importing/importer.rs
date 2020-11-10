@@ -16,7 +16,8 @@ pub(crate) async fn process_message(
     ctx: &mut DbContext<'_>,
     docs: DocumentSet,
 ) -> Result<MessageTiming, ErrorKind> {
-    let mut result: Result<MessageTiming, ErrorKind> = Err(ErrorKind::Unexpected);
+    let mut result: Result<MessageTiming, ErrorKind> =
+        Err(ErrorKind::Unexpected("No result from processing".into()));
 
     ctx.db_pool
         .get()
@@ -41,7 +42,8 @@ pub(crate) async fn process_invalidate(
     ctx: &mut DbContext<'_>,
 ) -> Result<MessageTiming, ErrorKind> {
     debug!(target: "apex", "Invalidating all data");
-    let mut result: Result<MessageTiming, ErrorKind> = Err(ErrorKind::Unexpected);
+    let mut result: Result<MessageTiming, ErrorKind> =
+        Err(ErrorKind::Unexpected("No result from processing".into()));
 
     ctx.db_pool
         .get()
@@ -52,7 +54,7 @@ pub(crate) async fn process_invalidate(
                 Ok(())
             }
             Err(e) => {
-                result = Err(ErrorKind::Unexpected);
+                result = Err(ErrorKind::Unexpected(e.to_string()));
                 Err(RollbackTransaction)
             }
         });

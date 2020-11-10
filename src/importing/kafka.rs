@@ -38,7 +38,7 @@ pub async fn import_kafka(
         let t = match message {
             Err(e) => {
                 warn!("Kafka error: {}", e);
-                Err(ErrorKind::Unexpected)
+                Err(ErrorKind::Unexpected(e.to_string()))
             }
             Ok(msg) => {
                 if let Some(payload) = msg.payload() {

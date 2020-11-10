@@ -6,7 +6,7 @@ extern crate log;
 use apex_rs::errors::ErrorKind;
 use apex_rs::importing::events::MessageTiming;
 use apex_rs::importing::redis::import_redis;
-use apex_rs::reporting::reporter::report;
+use apex_rs::reporting::prometheus::report_prometheus;
 use dotenv::dotenv;
 use tokio::sync::mpsc::*;
 
@@ -23,5 +23,5 @@ async fn main() {
 
     let (mut tx, mut rx) = channel::<Result<MessageTiming, ErrorKind>>(100);
 
-    tokio::try_join!(import_redis(&mut tx), report(&mut rx)).unwrap();
+    tokio::try_join!(import_redis(&mut tx), report_prometheus(&mut rx)).unwrap();
 }

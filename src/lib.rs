@@ -4,6 +4,8 @@ extern crate log;
 extern crate diesel;
 #[macro_use]
 extern crate error_chain;
+#[macro_use]
+extern crate prometheus;
 
 pub mod app_config;
 pub mod db;

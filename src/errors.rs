@@ -4,8 +4,14 @@ error_chain! {
 
         BackendUnavailable
 
-        Unexpected {
+        Unexpected(t: String) {
             description("Unexpected error occurred")
+            display("Unexpected error occurred: {}", t)
+        }
+
+        Unhandled(t: String) {
+            description("Unhandled error occurred")
+            display("Unhandled error: {}", t)
         }
 
         Timeout

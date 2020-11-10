@@ -38,8 +38,8 @@ impl BulkCtx {
         BulkCtx {
             req,
             config,
-            current_tenant_path: Err(ErrorKind::Unexpected),
-            current_website: Err(ErrorKind::Unexpected),
+            current_tenant_path: Err(ErrorKind::Unexpected("current_tenant_path not set".into())),
+            current_website: Err(ErrorKind::Unexpected("current_website not set".into())),
             language,
         }
     }
@@ -189,7 +189,7 @@ impl BulkCtx {
             Ok(tenant_res) => tenant_res,
             Err(SendRequestError::Timeout) => bail!(ErrorKind::BackendUnavailable),
             Err(SendRequestError::Connect(_)) => bail!(ErrorKind::BackendUnavailable),
-            Err(_) => bail!(ErrorKind::Unexpected),
+            Err(e) => bail!(ErrorKind::Unexpected(e.to_string())),
         };
 
         match tenant_res.status() {
@@ -209,9 +209,12 @@ impl BulkCtx {
                 }
             }
             StatusCode::NOT_FOUND => Err(ErrorKind::NoTenant),
-            _ => {
+            s => {
                 debug!(target: "apex", "Unexpected status tenant finder: Got HTTP {}", tenant_res.status());
-                Err(ErrorKind::Unexpected)
+                Err(ErrorKind::Unexpected(format!(
+                    "Unexpected status '{}'",
+                    s.as_u16()
+                )))
             }
         }
     }

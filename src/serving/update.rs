@@ -35,7 +35,7 @@ async fn parse_payload(
 ) -> Result<DocumentSet, ErrorKind> {
     let mut bytes = web::BytesMut::new();
     while let Some(item) = payload.next().await {
-        bytes.extend_from_slice(&item.map_err(|_| ErrorKind::Unexpected)?);
+        bytes.extend_from_slice(&item.map_err(|e| ErrorKind::Unexpected(e.to_string()))?);
     }
 
     parse_hndjson(&mut lookup_table, bytes.as_ref())

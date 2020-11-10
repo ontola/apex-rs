@@ -34,17 +34,38 @@ pub async fn invalidator_redis(
         }
 
         let config = AppConfig::default();
-        let pool = DbContext::default_pool(config.database_url, config.database_pool_size)?;
+        let pool = match DbContext::default_pool(config.database_url, config.database_pool_size) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(target: "apex", "Cannot connect to database: {}", e);
+                task::yield_now().await;
+
+                continue 'connection;
+            }
+        };
         let mut ctx = DbContext::new(&pool);
+
+        if let Err(e) = ctx.db_pool.get_timeout(Duration::from_secs(10_000)) {
+            warn!("Error connecting to db {}", e);
+            task::yield_now().await;
+
+            continue 'connection;
+        }
 
         let mut pubsub = consumer.as_pubsub();
         let channel = env::var("CACHE_CHANNEL").expect("No redis channel set");
-        pubsub
-            .subscribe(&channel)
-            .unwrap_or_else(|_| panic!("Failed to connect to channel: {}", &channel));
-        pubsub
-            .set_read_timeout(Some(Duration::from_millis(2000)))
-            .unwrap();
+        if let Err(e) = pubsub.subscribe(&channel) {
+            error!("Failed to connect to channel '{}': {}", &channel, e);
+            task::yield_now().await;
+
+            continue 'connection;
+        }
+        if let Err(e) = pubsub.set_read_timeout(Some(Duration::from_millis(2000))) {
+            error!("Failed to read timeout: {}", e);
+            task::yield_now().await;
+
+            continue 'connection;
+        }
 
         loop {
             let last_listen_time = Instant::now();
@@ -53,8 +74,11 @@ pub async fn invalidator_redis(
                 Ok(msg) => {
                     let msg_poll_time = Instant::now().duration_since(last_listen_time);
                     match msg.get_payload::<Vec<u8>>() {
-                        Err(_) => {
-                            if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                        Err(e) => {
+                            if let Err(e) = updates
+                                .send(Err(ErrorKind::Unexpected(e.to_string())))
+                                .await
+                            {
                                 error!(target: "apex", "Error while sending unexpected error to reporter: {}", e);
                             }
                             continue;
@@ -126,7 +150,7 @@ pub async fn invalidator_redis(
 
                     task::yield_now().await;
 
-                    if let Err(e) = updates.send(Err(ErrorKind::Unexpected)).await {
+                    if let Err(e) = updates.send(Err(ErrorKind::Unhandled(e.to_string()))).await {
                         error!(target: "apex", "Error while sending error to reporter: {}", e);
                     }
                 }
@@ -143,7 +167,7 @@ pub(crate) async fn process_message(
 ) -> Result<MessageTiming, ErrorKind> {
     ctx.db_pool
         .get()
-        .unwrap()
+        .map_err(|e| ErrorKind::Unhandled(e.to_string()))?
         .transaction::<MessageTiming, diesel::result::Error, _>(|| {
             for (iri, _) in docs {
                 trace!(target: "apex", "Invalidating resource: {}", iri);
@@ -155,7 +179,7 @@ pub(crate) async fn process_message(
 
             Ok(MessageTiming::new())
         })
-        .map_err(|_| ErrorKind::Unexpected)
+        .map_err(|e| ErrorKind::Unexpected(e.to_string()))
 }
 
 fn is_invalidate_all_cmd(ctx: &mut DbContext, model: &DocumentSet) -> bool {

@@ -1,198 +1,112 @@
 use crate::errors::ErrorKind;
 use crate::importing::events::MessageTiming;
-use humantime::format_duration;
+use crate::reporting::metrics::Metrics;
+use futures_util::core_reexport::sync::atomic::Ordering;
+use prometheus::core::{Atomic, AtomicF64, AtomicU64};
 use std::collections::VecDeque;
-use std::io::{stdout, StdoutLock, Write};
-use std::ops::Div;
-use std::time::{Duration, Instant};
-use tokio::sync::mpsc::*;
-use tokio::task;
+use std::sync::RwLock;
+use std::time::Instant;
 
-struct Reporter {
-    msg_count: u32,
-    error_count: u32,
-    msg_per_second: f64,
-    acc_poll_time: Duration,
-    acc_parse_time: Duration,
-    acc_delta_time: Duration,
-    acc_fetch_time: Duration,
-    acc_insert_time: Duration,
-    last_messages: VecDeque<Instant>,
-    last_timing: MessageTiming,
-}
+pub(crate) struct Reporter {
+    pub(crate) metrics: Metrics,
+    pub(crate) last_messages: RwLock<VecDeque<Instant>>,
+    pub(crate) last_timing: MessageTiming,
 
-pub async fn report(rx: &mut Receiver<Result<MessageTiming, ErrorKind>>) -> Result<(), String> {
-    let stdout = stdout();
-    let mut stdout = stdout.lock();
-    println!("Reported started");
-    let mut reporter = Reporter::default();
-    let mut io_limiter: i8 = 0;
+    pub(crate) msg_count: AtomicU64,
+    pub(crate) error_count: AtomicU64,
+    pub(crate) msg_per_second: AtomicF64,
 
-    loop {
-        let msg = rx.recv().await.unwrap();
-        let reporter_start = Instant::now();
-        reporter.update_processing_rate();
-
-        match msg {
-            Ok(timing) => reporter.add_timing(timing),
-            Err(e) => reporter.add_error(e),
-        }
-
-        io_limiter = (io_limiter + 1) % 5;
-        if io_limiter > 0 {
-            task::yield_now().await;
-            continue;
-        }
-
-        reporter.print_timing_report(&mut stdout);
-        stdout
-            .write_all(
-                humanize("Reporter", Instant::now().duration_since(reporter_start)).as_bytes(),
-            )
-            .unwrap();
-
-        stdout.flush().unwrap();
-        task::yield_now().await;
-    }
+    pub(crate) acc_poll_time: AtomicF64,
+    pub(crate) acc_parse_time: AtomicF64,
+    pub(crate) acc_delta_time: AtomicF64,
+    pub(crate) acc_fetch_time: AtomicF64,
+    pub(crate) acc_insert_time: AtomicF64,
 }
 
 impl Reporter {
-    fn update_processing_rate(&mut self) {
-        let last_message = self.last_messages.pop_front().unwrap();
-        let current_time = Instant::now();
-        self.last_messages.push_back(current_time);
-        self.msg_per_second = 1000f64 / current_time.duration_since(last_message).as_secs_f64();
-        self.msg_count += 1;
+    pub(crate) fn update_processing_rate(&self) {
+        self.msg_count.inc_by(1);
+        match self.last_messages.write() {
+            Ok(mut last_messages) => {
+                let last_message = last_messages.pop_front().unwrap();
+                let current_time = Instant::now();
+                last_messages.push_back(current_time);
+                let next = 1000f64 / current_time.duration_since(last_message).as_secs_f64();
+                self.msg_per_second.swap(next, Ordering::Relaxed);
+            }
+            Err(e) => {
+                error!(target: "apex", "Error reporting: {}", e);
+                panic!("Couldn't acquire lock while updating processing rate");
+            }
+        }
     }
 
-    fn add_timing(&mut self, timing: MessageTiming) {
-        self.acc_poll_time += timing.poll_time;
-        self.acc_parse_time += timing.parse_time;
-        self.acc_delta_time += timing.delta_total();
-        self.acc_fetch_time += timing.fetch_time;
-        self.acc_insert_time += timing.insert_time;
-        self.last_timing = timing;
+    pub(crate) fn add_timing(&self, timing: MessageTiming) {
+        self.metrics.message_count_metric.inc();
+
+        debug!(target: "apex", "timing test");
+        debug!(target: "apex", "timing poll s: {}", timing.poll_time.as_secs_f64());
+        debug!(target: "apex", "timing parse s: {}", timing.parse_time.as_secs_f64());
+        debug!(target: "apex", "timing delta s: {}", timing.delta_total().as_secs_f64());
+        debug!(target: "apex", "timing fetch s: {}", timing.fetch_time.as_secs_f64());
+        debug!(target: "apex", "timing insert s: {}", timing.insert_time.as_secs_f64());
+
+        self.metrics
+            .poll_time_metric
+            .observe(timing.poll_time.as_secs_f64());
+        self.metrics
+            .parse_time_metric
+            .observe(timing.parse_time.as_secs_f64());
+        self.metrics
+            .delta_time_metric
+            .observe(timing.delta_total().as_secs_f64());
+        self.metrics
+            .fetch_time_metric
+            .observe(timing.fetch_time.as_secs_f64());
+        self.metrics
+            .insert_time_metric
+            .observe(timing.insert_time.as_secs_f64());
+
+        self.acc_poll_time
+            .inc_by(timing.poll_time.as_millis() as f64);
+        self.acc_parse_time
+            .inc_by(timing.parse_time.as_millis() as f64);
+        self.acc_delta_time
+            .inc_by(timing.delta_total().as_millis() as f64);
+        self.acc_fetch_time
+            .inc_by(timing.fetch_time.as_millis() as f64);
+        self.acc_insert_time
+            .inc_by(timing.insert_time.as_millis() as f64);
+        // self.last_timing = timing;
     }
 
-    fn add_error(&mut self, e: ErrorKind) {
+    pub(crate) fn add_error(&self, e: ErrorKind) {
         error!(target: "apex", "{}", e);
-        self.error_count += 1;
+        self.metrics.error_count_metric.inc();
+        self.error_count.inc_by(1);
     }
+}
 
+impl Default for Reporter {
     fn default() -> Reporter {
-        let mut r = Reporter {
-            msg_count: 0u32,
-            error_count: 0,
-            msg_per_second: 0.0,
-            acc_poll_time: Duration::new(0, 0),
-            acc_parse_time: Duration::new(0, 0),
-            acc_delta_time: Duration::new(0, 0),
-            acc_fetch_time: Duration::new(0, 0),
-            acc_insert_time: Duration::new(0, 0),
-            last_timing: MessageTiming::new(),
-            last_messages: VecDeque::new(),
-        };
-
-        r.last_messages.reserve_exact(1_000);
+        let mut queue = VecDeque::new();
+        queue.reserve_exact(1_000);
         for _ in 0..1_000 {
-            r.last_messages.push_back(Instant::now())
+            queue.push_back(Instant::now())
         }
 
-        r
+        Reporter {
+            metrics: Default::default(),
+            msg_count: AtomicU64::new(0),
+            error_count: AtomicU64::new(0),
+            msg_per_second: AtomicF64::new(0.0),
+            acc_poll_time: AtomicF64::new(0.0),
+            acc_parse_time: AtomicF64::new(0.0),
+            acc_delta_time: AtomicF64::new(0.0),
+            acc_fetch_time: AtomicF64::new(0.0),
+            acc_insert_time: AtomicF64::new(0.0),
+            last_timing: MessageTiming::new(),
+            last_messages: RwLock::new(queue),
+        }
     }
-
-    fn print_timing_report(&self, stdout: &mut StdoutLock) {
-        write!(
-            stdout,
-            "\nProcessed: {} with {} errors at {:.2}/s\n",
-            self.msg_count, self.error_count, self.msg_per_second
-        )
-        .unwrap();
-
-        let last_timing = create_table(
-            "Last timing",
-            vec![
-                ("poll", self.last_timing.poll_time),
-                ("parse", self.last_timing.parse_time),
-                ("fetch", self.last_timing.fetch_time),
-                ("delta", self.last_timing.delta_total()),
-                ("insert", self.last_timing.insert_time),
-            ],
-        );
-        let last_delta = create_table(
-            "Last delta",
-            vec![
-                ("setup", self.last_timing.delta_time.setup_time),
-                ("sort", self.last_timing.delta_time.sort_time),
-                ("remove", self.last_timing.delta_time.remove_time),
-                ("replace", self.last_timing.delta_time.replace_time),
-                ("add", self.last_timing.delta_time.add_time),
-            ],
-        );
-
-        let avg_poll = self.acc_poll_time.div(self.msg_count);
-        let avg_parse = self.acc_parse_time.div(self.msg_count);
-        let avg_fetch = self.acc_fetch_time.div(self.msg_count);
-        let avg_delta = self.acc_delta_time.div(self.msg_count);
-        let avg_insert = self.acc_insert_time.div(self.msg_count);
-        let avg = create_table(
-            "Avg timing",
-            vec![
-                ("poll", self.acc_poll_time.div(self.msg_count)),
-                ("parse", self.acc_parse_time.div(self.msg_count)),
-                ("fetch", self.acc_fetch_time.div(self.msg_count)),
-                ("delta", self.acc_delta_time.div(self.msg_count)),
-                ("insert", self.acc_insert_time.div(self.msg_count)),
-            ],
-        );
-
-        let total = create_table(
-            "Total timing",
-            vec![
-                ("poll", self.acc_poll_time),
-                ("parse", self.acc_parse_time),
-                ("fetch", self.acc_fetch_time),
-                ("delta", self.acc_delta_time),
-                ("insert", self.acc_insert_time),
-            ],
-        );
-
-        let grand_total = create_table(
-            "Grand total",
-            vec![
-                (
-                    "total",
-                    self.acc_poll_time
-                        + self.acc_parse_time
-                        + self.acc_fetch_time
-                        + self.acc_delta_time
-                        + self.acc_insert_time,
-                ),
-                (
-                    "avg",
-                    avg_poll + avg_parse + avg_fetch + avg_delta + avg_insert,
-                ),
-            ],
-        );
-
-        stdout.write_all(last_timing.as_bytes()).unwrap();
-        stdout.write_all(last_delta.as_bytes()).unwrap();
-        stdout.write_all(avg.as_bytes()).unwrap();
-        stdout.write_all(total.as_bytes()).unwrap();
-        stdout.write_all(grand_total.as_bytes()).unwrap();
-    }
-}
-
-fn create_table(row_name: &str, columns: Vec<(&str, Duration)>) -> String {
-    let test = columns
-        .into_iter()
-        .map(|(l, t)| humanize(l, t))
-        .collect::<String>();
-
-    format!("{:<15} ‖ {}\n", row_name, test,)
-}
-
-#[inline]
-pub(crate) fn humanize(label: &str, time: Duration) -> String {
-    format!("{:.<10}.{:<27}| ", label, format_duration(time).to_string())
 }

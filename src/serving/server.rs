@@ -4,6 +4,8 @@ use crate::serving::assets::favicon;
 use crate::serving::bulk::bulk;
 use crate::serving::health::health;
 use crate::serving::hpf::{hpf, tpf};
+use crate::serving::metrics::metrics;
+use crate::serving::reporter::Reporter;
 use crate::serving::service_info::service_info;
 use crate::serving::show_resource::{random_resource, show_resource, show_resource_ext};
 use crate::serving::update::update;
@@ -63,6 +65,7 @@ pub async fn serve() -> std::io::Result<()> {
     if cfg!(debug_assertions) {
         print_config(&config);
     }
+    let reporter = Reporter::default();
     let pool = DbContext::default_pool(config.database_url.clone(), config.database_pool_size)
         .map_err(|e| {
             error!(target: "apex", "{}", e);
@@ -74,6 +77,7 @@ pub async fn serve() -> std::io::Result<()> {
         let app = App::new()
             .data(config.clone())
             .data(pool.clone())
+            .data(reporter.clone())
             .wrap(middleware::Logger::new(
                 r#"[%{X-Request-Id}i] %a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#,
             ))
@@ -98,6 +102,7 @@ pub async fn serve() -> std::io::Result<()> {
                 }
             })
             .wrap(middleware::Compress::default())
+            .service(metrics)
             .service(favicon)
             .service(bulk)
             .service(health)
