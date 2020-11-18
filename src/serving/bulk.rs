@@ -394,20 +394,30 @@ async fn lookup_resources(
                 .collect()
         } else {
             resources
-                .map(|iri| {
-                    if let Ok((doc, data)) = doc_by_iri(&mut ctx, &iri) {
-                        trace!("Load success: {}", iri);
+                .map(|iri| match doc_by_iri(&mut ctx, &iri) {
+                    Ok((doc, data)) => {
+                        trace!(target: "apex", "Load success: {}", iri);
                         Resource {
                             iri,
                             status: if data.is_empty() { 204 } else { 200 },
                             cache_control: doc.cache_control.into(),
                             data,
                         }
-                    } else {
-                        trace!("Load failed: {}", iri);
+                    }
+                    Err(ErrorKind::EmptyDocument) => {
+                        trace!(target: "apex", "Load failed emtpy: {}", iri);
                         Resource {
                             iri,
                             status: 404,
+                            cache_control: CacheControl::Private,
+                            data: HashModel::new(),
+                        }
+                    }
+                    Err(e) => {
+                        trace!(target: "apex", "Load failed: {}, {}", iri, e);
+                        Resource {
+                            iri,
+                            status: 500,
                             cache_control: CacheControl::Private,
                             data: HashModel::new(),
                         }
