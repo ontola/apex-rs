@@ -156,7 +156,7 @@ pub(crate) async fn bulk<'a>(
 
         Some(timing)
     } else {
-        debug!("All resources are present and public");
+        debug!(target: "apex", "All resources are present and public");
         None
     };
 
@@ -312,7 +312,7 @@ async fn authorize_via_bulk(
     }
 
     let website = req.website()?;
-    debug!("Using website: {}", website);
+    debug!(target: "apex", "Using website: {}", website);
 
     // Find tenant
     let tenant_path = req.tenant_path().await?;
@@ -350,7 +350,7 @@ async fn authorize_via_bulk(
                         debug!(target: "apex", "Unexpected error parsing bulk authorize response: {} with body: {}", e, String::from_utf8(body.clone()).unwrap());
                         if cfg!(debug_assertions) {
                             let output = String::from_utf8(body.to_vec()).unwrap();
-                            debug!("Response body from server: {}", output);
+                            debug!(target: "apex", "Response body from server: {}", output);
                         }
 
                         Err(ErrorKind::Unexpected(e.to_string()))
@@ -441,7 +441,7 @@ async fn process_private_and_missing(
 ) -> Result<(LookupTable, AuthorizeTiming), actix_http::Response> {
     let authorize_start = Instant::now();
 
-    trace!("Authorize / fetch {} documents", non_public_resources.len());
+    trace!(target: "apex", "Authorize / fetch {} documents", non_public_resources.len());
     let auth_result =
         match authorize_partitioned(&mut req, non_public_resources, &resources_in_store).await {
             Ok(data) => data,

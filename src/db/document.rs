@@ -69,7 +69,7 @@ pub fn random_doc(ctx: &mut DbContext) -> Result<(Document, HashModel), ErrorKin
     {
         Ok(doc) => doc.iri,
         Err(e) => {
-            warn!("{}", e);
+            warn!(target: "apex", "{}", e);
             return Err(ErrorKind::NoResources);
         }
     };
@@ -82,8 +82,8 @@ const EMPTY_STRING: &str = "";
 pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Document, HashModel) {
     match doc_by_iri(&mut ctx, iri) {
         Err(e) => {
-            debug!("Error resetting document: {}", e);
-            trace!("Document iri {} not yet in db", iri);
+            debug!(target: "apex", "Error resetting document: {}", e);
+            trace!(target: "apex", "Document iri {} not yet in db", iri);
             let doc = &NewDocument {
                 iri: String::from(iri),
                 language: ctx.lang.clone().expect("No language given"),
@@ -96,7 +96,7 @@ pub(crate) fn reset_document<'a>(mut ctx: &'a mut DbContext, iri: &str) -> (Docu
             (doc, vec![])
         }
         Ok(model) => {
-            trace!("Document with iri {} has id {}", model.0.iri, model.0.id);
+            trace!(target: "apex", "Document with iri {} has id {}", model.0.iri, model.0.id);
             delete_document_data(&ctx.get_conn(), iri);
             model
         }

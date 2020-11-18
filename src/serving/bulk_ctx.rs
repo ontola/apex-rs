@@ -164,7 +164,7 @@ impl BulkCtx {
             })
             .collect();
         let total = resources.len() as i32;
-        debug!("Documents; {} to authorize, {} to include", total, included);
+        debug!(target: "apex", "Documents; {} to authorize, {} to include", total, included);
 
         SPIBulkRequest { resources: items }
     }

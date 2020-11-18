@@ -46,7 +46,7 @@ pub async fn invalidator_redis(
         let mut ctx = DbContext::new(&pool);
 
         if let Err(e) = ctx.db_pool.get_timeout(Duration::from_secs(10_000)) {
-            warn!("Error connecting to db {}", e);
+            warn!(target: "apex", "Error connecting to db {}", e);
             task::yield_now().await;
 
             continue 'connection;

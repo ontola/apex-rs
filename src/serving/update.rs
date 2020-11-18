@@ -17,7 +17,7 @@ pub(crate) async fn update<'a>(pool: web::Data<DbPool>, payload: web::Payload) -
     };
 
     let total: usize = delta.iter().map(|(_, ds)| ds.len()).sum();
-    debug!("Recieved {} statements from body", total);
+    debug!(target: "apex", "Recieved {} statements from body", total);
     let mut res = match process_message(&mut ctx, delta).await {
         Ok(_) => HttpResponse::Ok(),
         Err(e) => {

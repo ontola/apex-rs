@@ -62,7 +62,7 @@ fn fetch(
     let fetch_start = Instant::now();
     let models = query.execute(&mut ctx)?;
     let fetch_time = Instant::now().duration_since(fetch_start);
-    debug!("Fetching cost: {}", format_duration(fetch_time));
+    debug!(target: "apex", "Fetching cost: {}", format_duration(fetch_time));
     let header = query.header(&mut ctx, &origin)?;
 
     let doc = [header.as_slice(), models.as_slice()].concat();
@@ -97,7 +97,7 @@ fn respond(
         (bulk_result_to_hextuples(bulk_arg), ResponseType::HEXTUPLE)
     };
     let convert_time = Instant::now().duration_since(convert_start);
-    debug!("Converting cost: {}", format_duration(convert_time));
+    debug!(target: "apex", "Converting cost: {}", format_duration(convert_time));
 
     set_default_headers(&mut HttpResponse::Ok(), &response_type).body(body)
 }

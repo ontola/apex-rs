@@ -37,7 +37,7 @@ pub async fn import_kafka(
 
         let t = match message {
             Err(e) => {
-                warn!("Kafka error: {}", e);
+                warn!(target: "apex", "Kafka error: {}", e);
                 Err(ErrorKind::Unexpected(e.to_string()))
             }
             Ok(msg) => {
@@ -49,7 +49,7 @@ pub async fn import_kafka(
                         Ok(model) => match process_message(&mut ctx, model).await {
                             Ok(timing) => {
                                 if let Err(e) = consumer.store_offset(&msg) {
-                                    warn!("Error while storing offset: {}", e);
+                                    warn!(target: "apex", "Error while storing offset: {}", e);
                                     Err(ErrorKind::Commit)
                                 } else {
                                     Ok(MessageTiming {
