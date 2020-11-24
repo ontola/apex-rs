@@ -185,15 +185,27 @@ impl BulkCtx {
             .header(header::USER_AGENT, bulk_ua())
             .copy_header_from("X-Request-Id", &self.req, None);
 
+        trace!(target: "apex", "Sending find_tenant request for iri: {}", tenant_req_body.iri);
         let mut tenant_res = match req.send_json(&tenant_req_body).await {
             Ok(tenant_res) => tenant_res,
-            Err(SendRequestError::Timeout) => bail!(ErrorKind::BackendUnavailable),
-            Err(SendRequestError::Connect(_)) => bail!(ErrorKind::BackendUnavailable),
-            Err(e) => bail!(ErrorKind::Unexpected(e.to_string())),
+            Err(SendRequestError::Timeout) => {
+                trace!(target: "apex", "Error during find_tenant request: ErrorKind::BackendUnavailable");
+                bail!(ErrorKind::BackendUnavailable)
+            }
+            Err(SendRequestError::Connect(_)) => {
+                trace!(target: "apex", "Error during find_tenant request: ErrorKind::BackendUnavailable");
+                bail!(ErrorKind::BackendUnavailable)
+            }
+            Err(e) => {
+                trace!(target: "apex", "Error during find_tenant request:` ErrorKind::Unexpected");
+                trace!(target: "apex", "Unexpected {}", e.to_string());
+                bail!(ErrorKind::Unexpected(e.to_string()))
+            }
         };
 
         match tenant_res.status() {
             StatusCode::OK => {
+                trace!(target: "apex", "Got 200 from find_tenant request");
                 let tenant = tenant_res
                     .json::<SPITenantFinderResponse>()
                     .await

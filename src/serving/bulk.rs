@@ -479,6 +479,28 @@ async fn process_private_and_missing(
     // 7. RS saves resources with cache headers to db according to policy
     let unstored_and_included: Vec<&SPIResourceResponseItem> = auth_result
         .iter()
+        .map(|r| {
+            match r.status {
+                200 | 204 => (),
+                300..=399 => update_or_insert_doc(bulk_docs, &r.iri, r.status, r.cache, vec![]),
+                _ => {
+                    match &r.body {
+                        Some(body) => {
+                            let body = String::from(body);
+                            match parse_hndjson(&mut lookup_table, body.as_ref()) {
+                                Ok(data) => update_or_insert_doc(bulk_docs, &r.iri, r.status, r.cache, docset_to_model(data)),
+                                Err(e) => warn!(target: "apex", "Error while processing bulk request {}", e),
+                            }
+                        }
+                        None => {
+                            update_or_insert_doc(bulk_docs, &r.iri, r.status, r.cache, vec![])
+                        }
+                    }
+                }
+            }
+
+            r
+        })
         .filter(|r| {
             trace!(target: "apex", "Auth result; iri: {}, status: {}, cache: {}, included: {}", r.iri, r.status, r.cache, r.body.is_some());
             r.status == 200 && !resources_in_store.contains(&r.iri) && r.body.is_some()
