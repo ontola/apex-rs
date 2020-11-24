@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:experimental
 
-FROM rust:latest AS builder
+FROM rust:1.47 AS builder
 WORKDIR /usr/src/app
 
 RUN apt-get update && apt-get install -y cmake gcc librdkafka-dev libsasl2-dev libpq-dev
