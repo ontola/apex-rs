@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y cmake gcc librdkafka-dev libsasl2-dev l
 COPY Cargo.toml Cargo.lock ./
 CMD cargo update --frozen --locked
 
+run echo 'fn main() {}' >> dummy.rs
+RUN echo '[[bin]]\nname = "app"\npath = "dummy.rs"' >> Cargo.toml
+RUN cargo build --release
+run rm dummy.rs
+
 COPY . ./
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
