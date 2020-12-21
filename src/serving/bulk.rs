@@ -23,6 +23,7 @@ use actix_web::client::SendRequestError;
 use actix_web::http::{header, Method};
 use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use itertools::Itertools;
 use log::Level;
 use percent_encoding::percent_decode_str;
 use serde_derive::{Deserialize, Serialize};
@@ -627,7 +628,8 @@ async fn parse_request(payload: web::Payload) -> Result<Vec<String>, actix_http:
     let resource_set = resource_set.unwrap();
     let resources: Vec<String> = resource_set
         .into_iter()
-        .map(|r| String::from(percent_decode_str(&r).decode_utf8().unwrap()))
+        .map(|r| String::from(stem_iri(percent_decode_str(&r).decode_utf8().unwrap())))
+        .unique()
         .collect();
 
     Ok(resources)
