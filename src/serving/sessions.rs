@@ -112,9 +112,13 @@ fn decode_session(
         &DecodingKey::from_secret(enc_token.as_ref()),
         &Validation::new(Algorithm::HS512),
     )
+    .map_err(|e: jsonwebtoken::errors::Error| match e.into_kind() {
+        jsonwebtoken::errors::ErrorKind::ExpiredSignature => ErrorKind::ExpiredSession,
+        _ => ErrorKind::SecurityError("Invalid JWT signature".into()),
+    })
     .map_err(|e| {
         warn!(target: "apex", "Error decoding token: {} for token {}", e, session.user_token);
-        ErrorKind::SecurityError("Invalid JWT signature".into())
+        ErrorKind::SecurityError("Other error during JWT signature decoding".into())
     })
 }
 
