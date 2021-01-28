@@ -35,6 +35,11 @@ pub struct AppConfig {
     pub session_cookie_name: Option<String>,
     /// Session cookie signature name to check for
     pub session_cookie_sig_name: Option<String>,
+    /// Device id cookie name to check for
+    pub device_id_cookie_name: Option<String>,
+    /// Device id cookie signature name to check for
+    pub device_id_cookie_sig_name: Option<String>,
+    /// Key for checking cookie signatures
     pub session_secret: Option<String>,
 }
 
@@ -123,6 +128,8 @@ impl Default for AppConfig {
             service_guest_token: env::var("SERVICE_GUEST_TOKEN").ok(),
             session_cookie_name: env::var("SESSION_COOKIE_NAME").ok(),
             session_cookie_sig_name: env::var("SESSION_COOKIE_SIGNATURE_NAME").ok(),
+            device_id_cookie_name: env::var("DEVICE_ID_COOKIE_NAME").ok(),
+            device_id_cookie_sig_name: env::var("DEVICE_ID_COOKIE_SIGNATURE_NAME").ok(),
             session_secret: env::var("SESSION_SECRET").ok(),
         }
     }

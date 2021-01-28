@@ -6,8 +6,8 @@ use crate::serving::bulk::{
 };
 use crate::serving::request_headers::HeaderCopy;
 use crate::serving::sessions::{
-    retrieve_session, session_id, session_info, RedisSession, RefreshTokenRequest,
-    RefreshTokenResponse,
+    retrieve_session, session_id, session_info, verify_device_id_signature, RedisSession,
+    RefreshTokenRequest, RefreshTokenResponse,
 };
 use crate::serving::ua::bulk_ua;
 use actix_http::client::SendRequestError;
@@ -123,7 +123,7 @@ impl BulkCtx {
             }
         }
 
-        let backend_req = backend_req
+        let mut backend_req = backend_req
             .copy_header_from("Accept-Language", &self.req, None)
             .copy_header_from("Origin", &self.req, None)
             .copy_header_from("Referer", &self.req, None)
@@ -133,13 +133,22 @@ impl BulkCtx {
             .copy_header_from("X-Forwarded-Ssl", &self.req, Some("on".into()))
             .copy_header_from("X-Real-Ip", &self.req, None)
             .copy_header_from("X-Requested-With", &self.req, None)
-            .copy_header_from("X-Device-Id", &self.req, None)
             .copy_header_from("X-Request-Id", &self.req, None)
             // .copy_header_from("X-Forwarded-For", &self.req, None)
             .copy_header_from("X-Client-Ip", &self.req, None)
             .copy_header_from("Client-Ip", &self.req, None)
             .copy_header_from("Host", &self.req, None)
             .copy_header_from("Forwarded", &self.req, None);
+
+        backend_req = if let Ok(device_id) = verify_device_id_signature(&self.config, &self.req) {
+            if let Some(device_id) = device_id {
+                backend_req.copy_header_from("X-Device-Id", &self.req, Some(device_id.as_str()))
+            } else {
+                backend_req.copy_header_from("X-Device-Id", &self.req, None)
+            }
+        } else {
+            backend_req.copy_header_from("X-Device-Id", &self.req, None)
+        };
 
         Ok(backend_req)
     }

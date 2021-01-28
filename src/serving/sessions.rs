@@ -1,6 +1,6 @@
 use crate::app_config::AppConfig;
 use crate::errors::ErrorKind;
-use actix_web::HttpMessage;
+use actix_web::{HttpMessage, HttpRequest};
 use chrono::TimeZone;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation};
 use redis::Commands;
@@ -161,12 +161,52 @@ fn verify_session_signature(
         .session_secret
         .as_ref()
         .ok_or(ErrorKind::Msg("No session secret set".into()))?;
+
+    verify_cookie_signature(session_cookie_name, session_id, signature, secret).and_then(|_| Ok(()))
+}
+
+pub fn verify_device_id_signature(
+    config: &AppConfig,
+    req: &HttpRequest,
+) -> Result<Option<String>, ErrorKind> {
+    let device_id_cookie_name = config
+        .device_id_cookie_name
+        .as_ref()
+        .ok_or(ErrorKind::Msg("No device id cookie name configured".into()))?;
+    let device_id_cookie_sig_name = config
+        .device_id_cookie_sig_name
+        .as_ref()
+        .ok_or(ErrorKind::Msg("No device id cookie name configured".into()))?;
+    let secret = config
+        .session_secret
+        .as_ref()
+        .ok_or(ErrorKind::Msg("No device_id secret set".into()))?;
+
+    if let Some(device_id_cookie) = req.cookie(device_id_cookie_name) {
+        let device_id = device_id_cookie.into_owned();
+        let signature = req.cookie(device_id_cookie_sig_name).unwrap().into_owned();
+
+        verify_cookie_signature(
+            device_id_cookie_name,
+            device_id.value(),
+            signature.value(),
+            secret,
+        )
+        .and_then(|v| Ok(Some(String::from(v))))
+    } else {
+        Ok(None)
+    }
+}
+
+fn verify_cookie_signature<'a>(
+    cookie_name: &str,
+    value: &'a str,
+    signature: &str,
+    secret: &str,
+) -> Result<&'a str, ErrorKind> {
     let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, &secret.as_bytes());
 
-    let sign = hmac::sign(
-        &key,
-        format!("{}={}", session_cookie_name, session_id).as_bytes(),
-    );
+    let sign = hmac::sign(&key, format!("{}={}", cookie_name, value).as_bytes());
     // https://github.com/tj/node-cookie-signature/blob/master/index.js#L23
     let generated_sig = base64::encode(&sign)
         .replace('/', "_")
@@ -174,7 +214,7 @@ fn verify_session_signature(
         .replace('=', "");
 
     if generated_sig == signature {
-        Ok(())
+        Ok(value)
     } else {
         Err(ErrorKind::CookieInvalidSignature)
     }
