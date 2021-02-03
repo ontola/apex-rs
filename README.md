@@ -7,7 +7,7 @@
 3. When using SSL with postgres
     2. Download and rename database SSL certificates to `certs` folder, see Dockerfile.
     3. Change the cert permissions `chmod -R 700 certs`
-2. Run `cargo install diesel-cli` and run `diesel setup` to initialize the db schema.
+2. Run `cargo run --bin migrate -- --version setup` to initialize the db.
 3. Add a record to _apex_config with key "seed" and a random 32 bit integer string value
 
 
@@ -27,10 +27,9 @@ Running the project via docker
 ### osx
 For compiling
 ```
-brew install autoconf automake libtool openssl
+brew install autoconf automake cmake libtool openssl
 
-git clone https://github.com/cyrusimap/cyrus-sasl.git
-cd cyrus-sasl/
+git clone https://github.com/cyrusimap/cyrus-sasl.git && cd cyrus-sasl
 sh ./autogen.sh
 make
 sudo make install
