@@ -9,15 +9,24 @@ use actix_web::{post, web, HttpResponse, Responder};
 use futures::StreamExt;
 
 #[post("/update")]
-pub(crate) async fn update<'a>(pool: web::Data<DbPool>, payload: web::Payload) -> impl Responder {
-    let mut ctx = DbContext::new(&pool);
+pub(crate) async fn update<'a>(
+    pool: web::Data<DbPool>,
+    req: actix_web::HttpRequest,
+    payload: web::Payload,
+) -> impl Responder {
+    let lang = if let Some(lang) = req.headers().get("Accept-Language") {
+        lang.to_str().unwrap().into()
+    } else {
+        String::from("en")
+    };
+    let mut ctx = DbContext::new_with_lang(&pool, Some(lang));
     let delta = match parse_payload(&mut ctx.lookup_table, payload).await {
         Ok(delta) => delta,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
     let total: usize = delta.iter().map(|(_, ds)| ds.len()).sum();
-    debug!(target: "apex", "Recieved {} statements from body", total);
+    debug!(target: "apex", "Received {} statements from body", total);
     let mut res = match process_message(&mut ctx, delta).await {
         Ok(_) => HttpResponse::Ok(),
         Err(e) => {
