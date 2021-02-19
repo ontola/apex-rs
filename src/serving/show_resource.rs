@@ -53,7 +53,7 @@ pub(crate) async fn show_resource_ext<'a>(
     info: web::Path<(String, String)>,
 ) -> HttpResponse {
     if let Ok(response_type) = ResponseType::from_ext(&info.1) {
-        let path = &info.0;
+        let path = info.into_inner().0;
         let pl = pool.into_inner();
 
         match iri_from_request(req, &path) {
@@ -75,7 +75,7 @@ pub(crate) async fn show_resource<'a>(
         Some(s) => s,
         None => return HttpResponse::NotAcceptable().finish(),
     };
-    let path = &info.0;
+    let path = info.into_inner().0;
     let pl = pool.into_inner();
 
     match iri_from_request(req, &path) {
