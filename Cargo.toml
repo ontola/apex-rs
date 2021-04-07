@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 actix-http = "2.2.0"
-actix-rt = "1.1.1"
 actix-web = "3.3.2"
 async-native-tls = { version = "0.3", default-features = false, features = ["runtime-tokio"] }
 base64 = "0.12.1"

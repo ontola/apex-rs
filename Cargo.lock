@@ -291,7 +291,6 @@ name = "apex-rs"
 version = "0.1.0"
 dependencies = [
  "actix-http",
- "actix-rt",
  "actix-web",
  "async-native-tls",
  "base64 0.12.3",

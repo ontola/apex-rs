@@ -6,7 +6,7 @@ extern crate log;
 use apex_rs::serving::serve;
 use dotenv::dotenv;
 
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     info!(target: "apex", "Booting");
     env_logger::init();
